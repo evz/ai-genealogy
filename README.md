@@ -1,5 +1,7 @@
 # Genealogy Extractor
 
+[![Quality Gate](https://github.com/evanzanten/ai-genealogy/actions/workflows/quality-gate.yml/badge.svg)](https://github.com/evanzanten/ai-genealogy/actions/workflows/quality-gate.yml)
+
 AI-powered genealogy digitization that processes Dutch family history books using OCR and LLM technology.
 
 ## Current Status
@@ -8,13 +10,24 @@ OCR processing pipeline implemented: multi-format documents (PDF, JPG, PNG, TIFF
 
 **Next**: AI-powered extraction to structured genealogy data.
 
+## Tested With
+
+- Python 3.12
+- Tesseract OCR 5.x with English and Dutch language packs
+- Docker 28.x
+- PostgreSQL 16 with pgvector extension
+
+## Sample Data
+
+The `samples/` directory contains Dutch genealogy documents (025.pdf, 032.pdf) used for testing multilingual OCR extraction. These demonstrate the system's ability to process historical family records with mixed English/Dutch text.
+
 ## Quick Demo
 
 **Requirements:** Git, Docker and make
 
 ```bash
 git clone <repository>
-cd genealogy_extractor
+cd ai-genealogy
 cp .env.example .env
 make demo
 ```
