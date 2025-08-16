@@ -52,6 +52,7 @@ jobs:
         elif [ "${{ matrix.check }}" = "format-check" ]; then
           ruff format --check .
         elif [ "${{ matrix.check }}" = "type-check" ]; then
+          export $(cat .env | xargs)
           mypy genealogy genealogy_extractor --config-file pyproject.toml
         elif [ "${{ matrix.check }}" = "security" ]; then
           bandit -r genealogy genealogy_extractor -f txt -c .bandit
