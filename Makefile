@@ -142,9 +142,6 @@ test-tasks: ensure-containers ## Run only task tests in Docker
 	@echo "$(YELLOW)⚡ Running task tests in Docker...$(NC)"
 	docker compose exec web python manage.py test genealogy.tests.test_tasks
 
-test-ocr: ensure-containers ## Run OCR workflow test in Docker
-	@echo "$(YELLOW)👁️ Running OCR workflow test in Docker...$(NC)"
-	docker compose exec web python test-ocr-workflow.py
 
 ##@ Docker Commands
 build: ## Build Docker containers
@@ -213,6 +210,21 @@ clean-docker: ## Clean up Docker containers and images
 	docker compose down --rmi all --volumes --remove-orphans
 
 ##@ Development Workflow
+demo: ## Complete demo setup (build, start, process sample PDFs)
+	@echo "$(YELLOW)🚀 Setting up complete OCR extraction demo...$(NC)"
+	@if [ ! -f .env ]; then \
+		echo "$(YELLOW)📄 Copying .env.example to .env...$(NC)"; \
+		cp .env.example .env; \
+	fi
+	$(MAKE) up-build
+	@echo "$(YELLOW)⏳ Waiting for services to be ready...$(NC)"
+	sleep 15
+	@echo "$(YELLOW)🧪 Running OCR demo with sample PDFs...$(NC)"
+	docker compose exec web python manage.py demo_ocr --clear
+	@echo "$(GREEN)✅ Demo complete!$(NC)"
+	@echo "$(GREEN)🌐 Access the application at: http://localhost:8000/admin/ (admin/admin)$(NC)"
+	@echo "$(GREEN)📋 View processed documents at: http://localhost:8000/admin/genealogy/document/$(NC)"
+
 dev-setup: ## Complete development setup (Docker + dependencies)
 	@echo "$(YELLOW)🏗️ Setting up development environment...$(NC)"
 	$(MAKE) install-dev

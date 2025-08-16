@@ -2,19 +2,19 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: genealogy_extractor
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "5432:5432"
+      - "${DB_PORT}:5432"
 
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT}:6379"
 
   web:
     build: .
@@ -27,10 +27,8 @@ services:
     depends_on:
       - db
       - redis
-    environment:
-      - DEBUG=1
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/genealogy_extractor
-      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
 
   celery:
     build: .
@@ -41,10 +39,8 @@ services:
     depends_on:
       - db
       - redis
-    environment:
-      - DEBUG=1
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/genealogy_extractor
-      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
 
   celery-beat:
     build: .
@@ -54,10 +50,8 @@ services:
     depends_on:
       - db
       - redis
-    environment:
-      - DEBUG=1
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/genealogy_extractor
-      - REDIS_URL=redis://redis:6379/0
+    env_file:
+      - .env
 
 volumes:
   postgres_data:
