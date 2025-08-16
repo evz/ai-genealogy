@@ -1,0 +1,58 @@
+/* Genealogy Admin Customizations */
+
+/* Form styling */
+.genealogy-form .form-row {
+    margin-bottom: 15px;
+}
+
+.genealogy-form label {
+    font-weight: bold;
+    margin-right: 10px;
+    min-width: 80px;
+    display: inline-block;
+}
+
+.genealogy-form input[type="file"] {
+    margin-bottom: 5px;
+}
+
+.genealogy-form select {
+    min-width: 200px;
+}
+
+.genealogy-form .help {
+    font-size: 11px;
+    color: #666;
+    margin: 2px 0 0 0;
+}
+
+/* Button styling */
+.genealogy-buttons .cancel-link {
+    margin-left: 10px;
+}
+
+/* Status indicators */
+.status-completed {
+    color: green;
+}
+
+.status-pending {
+    color: orange;
+}
+
+.status-error {
+    color: red;
+}
+
+/* Upload specific styling */
+.batch-upload-form {
+    max-width: 600px;
+}
+
+.batch-upload-form .module {
+    padding: 20px;
+}
+
+.batch-upload-form .help {
+    margin-left: 90px;
+}

@@ -1,0 +1,11 @@
+# Development bandit configuration
+# Excludes test directories and allows development settings
+exclude_dirs:
+  - "tests"
+  - "test" 
+  - ".venv"
+  - ".git"
+
+# Allow hardcoded SECRET_KEY in development settings
+skips:
+  - "B105"

@@ -1,0 +1,111 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}{{ title }} | {{ site_title|default:"Django site admin" }}{% endblock %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'genealogy/css/admin.css' %}">
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a>
+    &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+    &rsaquo; <a href="{% url 'admin:genealogy_document_changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+    &rsaquo; {{ title }}
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>{{ title }}</h1>
+
+<div class="module">
+    <p>Upload multiple genealogy documents (PDF, JPG, PNG, TIFF) at once. OCR processing will automatically start after upload.</p>
+    
+    <div class="help" style="background-color: #e8f4fd; border: 1px solid #b3d9ff; padding: 15px; margin: 10px 0; border-radius: 4px;">
+        <h3 style="margin-top: 0; color: #0066cc;">📄 File Naming Guidelines</h3>
+        <p><strong>For multi-page documents:</strong> Name your files with page numbers at the end for proper ordering.</p>
+        <p><strong>Recommended format:</strong> <code>document_name_001.pdf</code>, <code>document_name_002.pdf</code>, etc.</p>
+        <p><strong>Examples:</strong></p>
+        <ul>
+            <li>✅ <code>birth_certificate_001.pdf</code>, <code>birth_certificate_002.pdf</code></li>
+            <li>✅ <code>family_record_026.pdf</code> (page 26)</li>
+            <li>⚠️ <code>scan1.pdf</code>, <code>scan2.pdf</code> (will work but less reliable)</li>
+        </ul>
+        <p><em>Note: Files without page numbers will be ordered by upload sequence.</em></p>
+    </div>
+    
+    <form method="post" enctype="multipart/form-data" class="genealogy-form batch-upload-form">
+        {% csrf_token %}
+        
+        <fieldset class="module aligned">
+            <div class="form-row">
+                <div>
+                    <label for="id_files" class="required">Files:</label>
+                    <input type="file" name="files" id="id_files" multiple accept=".pdf,.jpg,.jpeg,.png,.tiff,.tif" required>
+                    <p class="help">Select multiple files to upload. Supported formats: PDF, JPG, PNG, TIFF</p>
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div>
+                    <label for="id_language" class="required">Language:</label>
+                    <select name="language" id="id_language" required>
+                        <option value="eng">English</option>
+                        <option value="nld">Dutch</option>
+                        <option value="eng+nld">English + Dutch</option>
+                    </select>
+                    <p class="help">Select the primary language(s) for OCR processing</p>
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div>
+                    <label for="id_upload_mode" class="required">Upload Mode:</label>
+                    <select name="upload_mode" id="id_upload_mode" required>
+                        <option value="single_document">Single Document (Multiple Pages)</option>
+                        <option value="multiple_documents">Multiple Separate Documents</option>
+                    </select>
+                    <p class="help">Choose whether files are pages of one document or separate documents</p>
+                </div>
+            </div>
+            
+            <div class="form-row" id="document_title_row">
+                <div>
+                    <label for="id_document_title">Document Title:</label>
+                    <input type="text" name="document_title" id="id_document_title" placeholder="Leave blank to auto-generate from first filename">
+                    <p class="help">Title for the document (only used in Single Document mode)</p>
+                </div>
+            </div>
+            
+        </fieldset>
+        
+        <div class="submit-row genealogy-buttons">
+            <input type="submit" value="Upload Files" class="default" name="_upload">
+            <a href="{% url 'admin:genealogy_document_changelist' %}" class="button cancel-link">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const uploadModeSelect = document.getElementById('id_upload_mode');
+    const documentTitleRow = document.getElementById('document_title_row');
+    
+    function toggleDocumentTitleField() {
+        if (uploadModeSelect.value === 'single_document') {
+            documentTitleRow.style.display = 'block';
+        } else {
+            documentTitleRow.style.display = 'none';
+        }
+    }
+    
+    // Initial state
+    toggleDocumentTitleField();
+    
+    // Update on change
+    uploadModeSelect.addEventListener('change', toggleDocumentTitleField);
+});
+</script>
+{% endblock %}

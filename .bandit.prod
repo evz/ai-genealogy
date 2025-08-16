@@ -1,0 +1,9 @@
+# Production bandit configuration  
+# Strict security checks, no exclusions except test directories
+exclude_dirs:
+  - "tests"
+  - "test"
+  - ".venv" 
+  - ".git"
+
+# No skips - all security issues should be addressed in production

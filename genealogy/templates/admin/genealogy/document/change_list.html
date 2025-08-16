@@ -1,0 +1,16 @@
+{% extends "admin/change_list.html" %}
+{% load static %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'genealogy/css/admin.css' %}">
+{% endblock %}
+
+{% block object-tools-items %}
+    {{ block.super }}
+    <li>
+        <a href="{% url 'admin:genealogy_document_batch_upload' %}" class="addlink">
+            Batch Upload Documents
+        </a>
+    </li>
+{% endblock %}

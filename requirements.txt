@@ -1,0 +1,15 @@
+Django==5.2.5
+psycopg2-binary==2.9.10
+celery==5.3.6
+redis==5.0.1
+pytesseract==0.3.13
+Pillow==11.0.0
+pdf2image==1.17.0
+
+# Development dependencies
+ruff==0.8.4
+mypy==1.13.0
+bandit==1.8.6
+django-stubs==5.1.0
+types-redis==4.6.0.20241004
+pre-commit==4.0.1
