@@ -61,7 +61,7 @@ Run `make help` to see all available development commands.
 
 ## License
 
-[License information]
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Support
 
