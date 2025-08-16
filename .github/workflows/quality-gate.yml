@@ -91,7 +91,7 @@ jobs:
         sleep 5
 
     - name: Run django-check
-      run: make django-check
+      run: docker compose exec web python manage.py check
 
     - name: Run tests
-      run: make test
+      run: docker compose exec web python manage.py test genealogy.tests
