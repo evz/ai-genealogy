@@ -7,11 +7,11 @@ on:
     branches: [ main ]
 
 jobs:
-  quality-gate:
+  lint-and-static-checks:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        check: [lint, format-check, type-check, security, django-check, test]
+        check: [lint, format-check, type-check, security]
       fail-fast: false
     
     steps:
@@ -22,10 +22,32 @@ jobs:
       with:
         python-version: '3.12'
     
-    - name: Install dev dependencies
+    - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements-dev.txt
+        pip install -r requirements.txt
+    
+    - name: Run ${{ matrix.check }}
+      run: |
+        if [ "${{ matrix.check }}" = "lint" ]; then
+          ruff check .
+        elif [ "${{ matrix.check }}" = "format-check" ]; then
+          ruff format --check .
+        elif [ "${{ matrix.check }}" = "type-check" ]; then
+          mypy genealogy genealogy_extractor --config-file pyproject.toml
+        elif [ "${{ matrix.check }}" = "security" ]; then
+          bandit -r genealogy genealogy_extractor -f txt -c .bandit
+        fi
+
+  django-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        check: [django-check, test]
+      fail-fast: false
+    
+    steps:
+    - uses: actions/checkout@v4
     
     - name: Set up environment variables
       run: |
