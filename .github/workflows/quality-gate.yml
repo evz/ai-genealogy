@@ -90,6 +90,13 @@ jobs:
         timeout 60 bash -c 'until docker compose ps | grep -q "web.*Up"; do sleep 2; done'
         sleep 5
 
+    - name: Debug container status
+      run: |
+        echo "Container status:"
+        docker compose ps
+        echo "Web container logs:"
+        docker compose logs web
+
     - name: Run django-check
       run: docker compose exec web python manage.py check
 
