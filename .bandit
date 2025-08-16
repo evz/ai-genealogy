@@ -2,7 +2,7 @@
 # Excludes test directories and allows development settings
 exclude_dirs:
   - "tests"
-  - "test" 
+  - "test"
   - ".venv"
   - ".git"
 

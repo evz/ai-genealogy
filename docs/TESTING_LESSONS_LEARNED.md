@@ -16,7 +16,7 @@ def test_validate_paths_output_folder_undefined(self, task_manager):
     """Test path validation when output_folder is not defined"""
     with tempfile.TemporaryDirectory() as tmp_dir:
         task_manager.pdf_folder = Path(tmp_dir)
-        
+
         # THIS TEST EXPECTED THE BUG TO EXIST!
         with pytest.raises(AttributeError, match="'OCRTaskManager' object has no attribute 'output_folder'"):
             task_manager._validate_paths()
@@ -33,7 +33,7 @@ def test_validate_paths_output_folder_undefined(self, task_manager):
 def test_process_pdfs_ocr_success_integration(self, mock_manager_class):
     mock_manager = Mock()
     mock_manager.run.return_value = {'success': True}
-    
+
     # This test passes but never exercises real OCRTaskManager code
     result = process_pdfs_ocr.apply(args=("custom/path",))
 ```
@@ -81,7 +81,7 @@ def test_process_pdfs_ocr_success_integration(self, mock_manager_class):
 **❌ BAD: Heavy mocking, fake integration**
 ```python
 @patch('web_app.tasks.ocr_tasks.OCRTaskManager')
-@patch('web_app.tasks.ocr_tasks.PDFOCRProcessor') 
+@patch('web_app.tasks.ocr_tasks.PDFOCRProcessor')
 def test_ocr_workflow(self, mock_processor, mock_manager):
     mock_manager.return_value.run.return_value = {'success': True}
     # This tests nothing real
@@ -110,7 +110,7 @@ class BaseTestConfig:
 
 **Solution:**
 ```python
-# conftest.py - RIGHT  
+# conftest.py - RIGHT
 class BaseTestConfig:
     CELERY_TASK_ALWAYS_EAGER = True      # Run synchronously
     CELERY_TASK_EAGER_PROPAGATES = True  # Propagate exceptions
@@ -123,7 +123,7 @@ class BaseTestConfig:
 **Problem: Mocking Internal Logic**
 ```python
 @patch('web_app.tasks.extraction_tasks.ExtractionTaskManager')
-@patch('web_app.tasks.extraction_tasks.LLMGenealogyExtractor') 
+@patch('web_app.tasks.extraction_tasks.LLMGenealogyExtractor')
 @patch('web_app.tasks.extraction_tasks.PromptService')
 @patch('web_app.tasks.extraction_tasks.GenealogyDataRepository')
 # Mocking everything = testing nothing
@@ -165,10 +165,10 @@ python smoke_tests.py
 ### 2. Real Workflow Testing
 
 **Test the actual user journey:**
-1. User submits form → 
-2. Route handler processes → 
-3. Task executes → 
-4. Results stored → 
+1. User submits form →
+2. Route handler processes →
+3. Task executes →
+4. Results stored →
 5. User sees completion
 
 ### 3. Mock Guidelines
@@ -181,7 +181,7 @@ python smoke_tests.py
 
 **❌ Don't Mock These (Internal Logic):**
 - TaskManagers
-- Services  
+- Services
 - Repositories
 - Business logic classes
 
@@ -208,7 +208,7 @@ python smoke_tests.py
 
 ### Medium Term
 1. Refactor existing tests to reduce over-mocking
-2. Add end-to-end tests for major workflows  
+2. Add end-to-end tests for major workflows
 3. Remove tests that expect broken behavior
 4. Set mock count limits in pytest config
 
@@ -229,7 +229,7 @@ python smoke_tests.py
 ### For AI Assistants (Claude Code)
 - **Verify claims**: Never claim "well-tested" without running workflows
 - **Test first**: Run smoke tests before quality assessments
-- **Real execution**: Test actual code paths, not mocked versions  
+- **Real execution**: Test actual code paths, not mocked versions
 - **Honest limitations**: Distinguish unit test passing from feature working
 
 ## Remember This Incident
@@ -253,7 +253,7 @@ python smoke_tests.py
 ```python
 def test_workflow_integration(self, client, db, mock_external_dependency):
     """Test complete workflow from HTTP to database results"""
-    
+
     # 1. Prepare real test data (real files, real directories)
     # 2. Submit via real HTTP endpoint (client.post)
     # 3. Assert specific HTTP response (url_for redirect, exact status)
@@ -266,7 +266,7 @@ def test_workflow_integration(self, client, db, mock_external_dependency):
 
 **✅ USE THESE FIXTURES:**
 - `client` - Automatic app context for HTTP requests
-- `app_ctx` - App context for non-HTTP database operations  
+- `app_ctx` - App context for non-HTTP database operations
 - `db` - Database with automatic transaction rollback
 - `url_for()` - Reverse URL lookup for redirect assertions
 
@@ -287,11 +287,11 @@ assert 'success' in flashed_messages
 ```python
 # Use pytest-flask fixtures
 def test_workflow(self, client, app_ctx, db):
-    
+
     # Specific redirect assertion
     expected_url = url_for('main.index')
     assert response.location == expected_url
-    
+
     # Exact flash message assertion
     message = success_messages[0]
     assert message.startswith('OCR job started using default folder. Task ID: ')
@@ -309,7 +309,7 @@ def test_workflow(self, client, app_ctx, db):
 **❌ NEVER Mock These (Internal Logic):**
 ```python
 @patch('web_app.tasks.ocr_tasks.OCRTaskManager')  # ❌ Testing fake behavior
-@patch('web_app.services.rag_service.RAGService')  # ❌ Not integration  
+@patch('web_app.services.rag_service.RAGService')  # ❌ Not integration
 @patch('web_app.repositories.genealogy_repository.GenealogyRepository')  # ❌ Skip real DB
 ```
 
@@ -388,7 +388,7 @@ def test_ocr_integration(mock_manager):
     # This tests nothing real!
 ```
 
-**🚨 RED FLAG: Over-Contextualizing**  
+**🚨 RED FLAG: Over-Contextualizing**
 ```python
 with app.app_context():
     with app.test_request_context():
@@ -445,11 +445,11 @@ with tempfile.TemporaryDirectory() as tmp_dir:
     pdf_path = Path(tmp_dir) / "test.pdf"
     with open(pdf_path, 'wb') as f:
         f.write(fake_pdf_content)
-    
+
     # Test real TaskManager
     task_manager = OCRTaskManager('test-task', tmp_dir)
     task_manager._validate_paths()  # Would catch missing output_folder
-    
+
     # Verify real directory creation
     assert task_manager.output_folder.exists()
 ```
@@ -508,19 +508,19 @@ Tests real business logic with database operations
 ```python
 def test_ocr_service_with_uploaded_files(self, app, db, fake_pdf_file, mock_external_processor):
     """Test service business logic with real database operations"""
-    
+
     # Create real FileStorage object
     uploaded_file = FileStorage(stream=pdf_content, filename=pdf_filename)
-    
+
     with app.app_context():
         # Test real service with real database
         service = OCRService()
         result = service.start_ocr_job([uploaded_file])
-        
+
         # Assert business logic results
         assert result.success is True
         assert result.task_id is not None
-        
+
         # Assert real database changes
         uploaded_files = JobFile.query.filter_by(job_type='ocr', file_type='input').all()
         assert len(uploaded_files) == 1
@@ -542,24 +542,24 @@ Tests HTTP concerns with mocked service
 ```python
 def test_ocr_blueprint_http_concerns(self, client, db):
     """Test blueprint HTTP handling with mocked service"""
-    
+
     # Mock the service layer
     with patch('web_app.blueprints.ocr.OCRService') as mock_service_class:
         mock_service = Mock()
         mock_service_class.return_value = mock_service
-        
+
         # Mock service response
         mock_service.start_ocr_job.return_value = OCRResult(
             success=True, task_id='test-id', message='Success message'
         )
-        
+
         # Test real HTTP request
         response = client.post('/ocr/start', data={'pdf_files': [(pdf_content, filename)]})
-        
+
         # Assert HTTP concerns
         assert response.status_code == 302
         assert response.location == url_for('main.index')
-        
+
         # Assert service called correctly
         mock_service.start_ocr_job.assert_called_once()
         files_arg = mock_service.start_ocr_job.call_args[0][0]
@@ -582,7 +582,7 @@ def test_ocr_blueprint_http_concerns(self, client, db):
 ```
 Blueprint Layer:  HTTP concerns, user interface
   ↓ (test with mocked service)
-Service Layer:    Business logic, transactions  
+Service Layer:    Business logic, transactions
   ↓ (test with real database)
 Repository Layer: Data access, flush operations
   ↓ (tested via service layer)
@@ -605,43 +605,43 @@ External Systems: OCR, APIs, file system
 ```python
 class TestWorkflowIntegration:
     """Integration tests for [workflow name]"""
-    
+
     def test_[workflow]_service_business_logic(self, app, db, mock_external_deps):
         """Test service layer with real database operations"""
-        
+
         with app.app_context():
             # Setup real input data
             service = [WorkflowService]()
-            
+
             # Execute real business logic
             result = service.[workflow_method](input_data)
-            
+
             # Assert business outcomes
             assert result.success is True
-            
+
             # Assert real database changes
             records = [Model].query.filter_by(criteria).all()
             assert len(records) == expected_count
-            
+
             # Assert external service calls
             mock_external_deps.[method].assert_called_with(expected_args)
-    
+
     def test_[workflow]_blueprint_http_concerns(self, client, db):
         """Test blueprint HTTP handling with mocked service"""
-        
+
         with patch('web_app.blueprints.[blueprint].[ServiceClass]') as mock_service_class:
             # Setup service mock
             mock_service = Mock()
             mock_service_class.return_value = mock_service
             mock_service.[method].return_value = [SuccessResult](...)
-            
+
             # Execute HTTP request
             response = client.post('/[route]', data=request_data)
-            
+
             # Assert HTTP response
             assert response.status_code == expected_status
             assert response.location == url_for('expected.route')
-            
+
             # Assert service integration
             mock_service.[method].assert_called_once()
 ```
@@ -651,7 +651,7 @@ class TestWorkflowIntegration:
 **For Service Layer Tests:**
 ```bash
 # Set Celery to run synchronously
-CELERY_TASK_ALWAYS_EAGER=true 
+CELERY_TASK_ALWAYS_EAGER=true
 CELERY_TASK_EAGER_PROPAGATES=true
 ```
 
@@ -701,7 +701,7 @@ def test_service_logic():
 
 **A workflow is properly tested when:**
 - [ ] Service layer test exercises real business logic with database
-- [ ] Blueprint layer test covers HTTP concerns with mocked service  
+- [ ] Blueprint layer test covers HTTP concerns with mocked service
 - [ ] Both tests run quickly (< 1 second each)
 - [ ] Service test would catch missing attributes or business logic errors
 - [ ] Blueprint test would catch HTTP parameter or routing issues

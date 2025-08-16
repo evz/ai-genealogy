@@ -128,7 +128,7 @@ def extraction_view():
 BaseTaskManager →
   FileResultMixin →
     OCRTaskManager
-    
+
 BaseRepository →
   GenealogyBaseRepository →
     ModelRepository[T] →
@@ -174,7 +174,7 @@ class ModelRepository[T]:
 # Current: 4 different config classes
 class BaseConfig:
 class DevelopmentConfig(BaseConfig):
-class TestingConfig(BaseConfig):  
+class TestingConfig(BaseConfig):
 class ProductionConfig(BaseConfig):
 
 # Plus environment variables
@@ -248,7 +248,7 @@ class ExtractorFactory:
             return LLMExtractor(config)
         # Room for 20 future extractor types we'll never build
 
-# Simple and sufficient  
+# Simple and sufficient
 def extract_from_text(text: str) -> dict:
     return llm_extract(text)
 ```
@@ -491,7 +491,7 @@ tests/                  # Integration tests covering user workflows
 
 Complex, "clean" architectures with perfect abstractions are worthless if:
 - Simple changes require touching 5+ files
-- New developers can't contribute quickly  
+- New developers can't contribute quickly
 - Debugging requires understanding multiple inheritance hierarchies
 - Features take longer to implement than they should
 

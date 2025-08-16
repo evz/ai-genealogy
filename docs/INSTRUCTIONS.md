@@ -6,7 +6,7 @@ books using OCR and LLM technology to extract structured family data. I'd like
 to have very simple user interfaces (no need for complex javascript) that
 accept PDF scans of source material and extract localized plain text (in Dutch
 and English for now). This source material should serve as corpora for a few
-different things: 
+different things:
 
 * Extracting structured data about family relationships and turning that into a
   standard GEDCOM format.
@@ -46,4 +46,4 @@ markdown files called DESIGN_LESSONS_LEARNED.md and TESTING_LESSONS_LEARNED.md.
 I don't want to have to end up scrapping everything and starting over again
 with this attempt. Some context that might help is that app was a Flask app
 while the one we'll be building here is Django. But I think the principles in
-those files are still relevant 
+those files are still relevant

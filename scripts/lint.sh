@@ -83,7 +83,7 @@ echo -e "${GREEN}✨ Code is ready for commit${NC}"
 # Optional: Show summary statistics
 echo -e "\n📊 Summary:"
 echo "- Linting: ✅ Clean"
-echo "- Formatting: ✅ Consistent" 
+echo "- Formatting: ✅ Consistent"
 echo "- Type Hints: ✅ Valid"
 echo "- Security: ✅ Safe"
 echo "- Tests: ✅ Passing"

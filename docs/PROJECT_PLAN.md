@@ -12,7 +12,7 @@ AI-powered genealogy digitization application that processes Dutch family histor
 
 **Tech Stack:**
 - Django (web interface, data models)
-- Celery (background processing)  
+- Celery (background processing)
 - PostgreSQL + pgvector (data storage, vector search)
 - Redis (Celery backend)
 - Docker (containerization)
@@ -27,7 +27,7 @@ AI-powered genealogy digitization application that processes Dutch family histor
 2. **Upload Interface** - Basic form to upload PDF files
 3. **Document Storage** - Simple file handling and database storage
 
-### Phase 2: Core Processing Pipeline  
+### Phase 2: Core Processing Pipeline
 **Goal**: Transform PDFs into searchable text
 
 3. **OCR Processing** - Celery task for PDF → text extraction
@@ -45,7 +45,7 @@ AI-powered genealogy digitization application that processes Dutch family histor
 **Goal**: Provide useful formats for genealogy work
 
 6. **GEDCOM Export** - Standard genealogy format output
-7. **Q&A Interface** - Simple form to query document content  
+7. **Q&A Interface** - Simple form to query document content
 8. **Wiki Pages** - Basic templates for Person/Family/Place pages
 
 ### Phase 5: Development Infrastructure
@@ -60,7 +60,7 @@ Based on lessons learned from previous over-engineered attempt:
 
 ### Simplicity First
 - Start with Django models containing business logic, not separate service layers
-- Use simple views that call models/tasks directly  
+- Use simple views that call models/tasks directly
 - Add abstraction only when you have 3+ similar cases
 - Avoid repository pattern unless multiple data sources exist
 - Functions over classes when possible
@@ -83,7 +83,7 @@ Based on lessons learned from previous over-engineered attempt:
 
 "Anchor-aware, local RAG pipeline":
 1. Clean OCR text
-2. Split into small chunks  
+2. Split into small chunks
 3. Attach deterministic anchors (genealogical IDs like II.1.a, page/time, names/dates/places)
 4. Store text + embeddings + trigram + phonetic keys in PostgreSQL
 5. At query time: hybrid retriever (vectors + trigram/BM25 + Daitch–Mokotoff)

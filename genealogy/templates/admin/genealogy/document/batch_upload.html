@@ -22,7 +22,7 @@
 
 <div class="module">
     <p>Upload multiple genealogy documents (PDF, JPG, PNG, TIFF) at once. OCR processing will automatically start after upload.</p>
-    
+
     <div class="help" style="background-color: #e8f4fd; border: 1px solid #b3d9ff; padding: 15px; margin: 10px 0; border-radius: 4px;">
         <h3 style="margin-top: 0; color: #0066cc;">📄 File Naming Guidelines</h3>
         <p><strong>For multi-page documents:</strong> Name your files with page numbers at the end for proper ordering.</p>
@@ -35,10 +35,10 @@
         </ul>
         <p><em>Note: Files without page numbers will be ordered by upload sequence.</em></p>
     </div>
-    
+
     <form method="post" enctype="multipart/form-data" class="genealogy-form batch-upload-form">
         {% csrf_token %}
-        
+
         <fieldset class="module aligned">
             <div class="form-row">
                 <div>
@@ -47,7 +47,7 @@
                     <p class="help">Select multiple files to upload. Supported formats: PDF, JPG, PNG, TIFF</p>
                 </div>
             </div>
-            
+
             <div class="form-row">
                 <div>
                     <label for="id_language" class="required">Language:</label>
@@ -59,7 +59,7 @@
                     <p class="help">Select the primary language(s) for OCR processing</p>
                 </div>
             </div>
-            
+
             <div class="form-row">
                 <div>
                     <label for="id_upload_mode" class="required">Upload Mode:</label>
@@ -70,7 +70,7 @@
                     <p class="help">Choose whether files are pages of one document or separate documents</p>
                 </div>
             </div>
-            
+
             <div class="form-row" id="document_title_row">
                 <div>
                     <label for="id_document_title">Document Title:</label>
@@ -78,9 +78,9 @@
                     <p class="help">Title for the document (only used in Single Document mode)</p>
                 </div>
             </div>
-            
+
         </fieldset>
-        
+
         <div class="submit-row genealogy-buttons">
             <input type="submit" value="Upload Files" class="default" name="_upload">
             <a href="{% url 'admin:genealogy_document_changelist' %}" class="button cancel-link">Cancel</a>
@@ -92,7 +92,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     const uploadModeSelect = document.getElementById('id_upload_mode');
     const documentTitleRow = document.getElementById('document_title_row');
-    
+
     function toggleDocumentTitleField() {
         if (uploadModeSelect.value === 'single_document') {
             documentTitleRow.style.display = 'block';
@@ -100,10 +100,10 @@ document.addEventListener('DOMContentLoaded', function() {
             documentTitleRow.style.display = 'none';
         }
     }
-    
+
     // Initial state
     toggleDocumentTitleField();
-    
+
     // Update on change
     uploadModeSelect.addEventListener('change', toggleDocumentTitleField);
 });

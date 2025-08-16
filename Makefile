@@ -12,7 +12,7 @@ help: ## Show this help message
 	@echo "============================================="
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make $(GREEN)<target>$(NC)\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(NC)\n", substr($$0, 5) }' $(MAKEFILE_LIST)
 
-##@ Setup and Installation  
+##@ Setup and Installation
 setup: ## Initial project setup (Docker-first development)
 	@echo "$(YELLOW)🚀 Setting up genealogy-extractor project (Docker)...$(NC)"
 	$(MAKE) install-dev
@@ -67,7 +67,7 @@ quality-gate: ensure-containers ## Run complete quality gate (linting, formattin
 	@echo "$(YELLOW)🚪 Running complete quality gate...$(NC)"
 	@echo "=================================="
 	$(MAKE) lint
-	$(MAKE) format-check  
+	$(MAKE) format-check
 	$(MAKE) type-check
 	$(MAKE) security
 	$(MAKE) django-check
