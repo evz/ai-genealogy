@@ -90,6 +90,11 @@ jobs:
         echo ".env file contents:"
         cat .env
 
+    - name: Clean up any existing containers
+      run: |
+        docker compose down -v || true
+        docker system prune -f || true
+
     - name: Start database first
       run: docker compose up -d db redis
 
