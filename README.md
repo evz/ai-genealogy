@@ -1,6 +1,6 @@
 # Genealogy Extractor
 
-[![Quality Gate](https://github.com/evanzanten/ai-genealogy/actions/workflows/quality-gate.yml/badge.svg)](https://github.com/evanzanten/ai-genealogy/actions/workflows/quality-gate.yml)
+[![Quality Gate](https://github.com/evz/ai-genealogy/actions/workflows/quality-gate.yml/badge.svg)](https://github.com/evz/ai-genealogy/actions/workflows/quality-gate.yml)
 
 AI-powered genealogy digitization that processes Dutch family history books using OCR and LLM technology.
 

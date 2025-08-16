@@ -9,71 +9,38 @@ on:
 jobs:
   quality-gate:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        check: [lint, format-check, type-check, security, django-check, test]
+      fail-fast: false
     
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_DB: genealogy_extractor
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-      
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
-
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.12'
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          tesseract-ocr \
-          tesseract-ocr-eng \
-          tesseract-ocr-nld \
-          libtesseract-dev \
-          poppler-utils
-    
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
     
     - name: Set up environment variables
       run: |
         cat > .env << EOF
         DJANGO_SECRET_KEY=test-secret-key-for-ci
         DEBUG=False
-        DB_HOST=localhost
+        DB_HOST=db
         DB_NAME=genealogy_extractor
         DB_USER=postgres
         DB_PASSWORD=postgres
         DB_PORT=5432
-        REDIS_HOST=localhost
+        REDIS_HOST=redis
         REDIS_PORT=6379
         DJANGO_SUPERUSER_USERNAME=admin
         DJANGO_SUPERUSER_PASSWORD=admin
         DJANGO_SUPERUSER_EMAIL=admin@localhost
         EOF
     
-    - name: Run quality gate
-      run: make quality-gate
+    - name: Build and start services
+      run: docker compose up -d --build
+    
+    - name: Wait for services to be ready
+      run: |
+        echo "Waiting for services to be ready..."
+        sleep 15
+    
+    - name: Run ${{ matrix.check }}
+      run: make ${{ matrix.check }}
