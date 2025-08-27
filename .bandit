@@ -7,5 +7,7 @@ exclude_dirs:
   - ".git"
 
 # Allow hardcoded SECRET_KEY in development settings
+# Allow HuggingFace downloads without revision pinning for development
 skips:
   - "B105"
+  - "B615"

@@ -3,6 +3,7 @@ import os
 import re
 from typing import TYPE_CHECKING
 
+from django import forms
 from django.contrib import admin, messages
 from django.shortcuts import redirect, render
 from django.urls import path
@@ -19,10 +20,77 @@ from .models import (
     Partnership,
     Person,
     Place,
+    TextChunk,
 )
-from .tasks import process_page_ocr
+from .ollama_utils import get_default_models
+from .tasks import (
+    process_genealogy_extraction,
+    process_page_ocr,
+)
 
 logger = logging.getLogger(__name__)
+
+
+class TextChunkAdminForm(forms.ModelForm):
+    """Custom form for TextChunk admin with user-friendly curation fields"""
+
+    class Meta:
+        model = TextChunk
+        fields = [
+            "text_content",
+            "chunk_type",
+            "start_page",
+            "end_page",
+            "sequence_number",
+            "generation_number",
+            "generation_header",
+            "genealogy_ids",
+            "person_names",
+            "dates",
+            "places",
+            "family_groups",
+            "entities_extracted",
+            "manually_reviewed",
+            "extraction_method",
+        ]
+        widgets = {
+            "genealogy_ids": forms.Textarea(
+                attrs={
+                    "rows": 2,
+                    "cols": 80,
+                    "placeholder": "II.1.a, II.1.b, III.5.c (leave empty if no IDs in this chunk)",
+                }
+            ),
+            "person_names": forms.Textarea(
+                attrs={
+                    "rows": 2,
+                    "cols": 80,
+                    "placeholder": "Johan van der Berg, Maria Janssen, Pieter de Wit",
+                }
+            ),
+            "dates": forms.Textarea(
+                attrs={
+                    "rows": 2,
+                    "cols": 80,
+                    "placeholder": "1654-03-15, 1658-12-22, 1675-01-01",
+                }
+            ),
+            "places": forms.Textarea(
+                attrs={
+                    "rows": 2,
+                    "cols": 80,
+                    "placeholder": "Amsterdam, Utrecht, Haarlem",
+                }
+            ),
+            "family_groups": forms.Textarea(
+                attrs={
+                    "rows": 2,
+                    "cols": 80,
+                    "placeholder": "II.9. Children of..., III.1. Kinderen van...",
+                }
+            ),
+            "text_content": forms.Textarea(attrs={"rows": 10, "cols": 80}),
+        }
 
 
 @admin.register(Document)
@@ -34,6 +102,8 @@ class DocumentAdmin(admin.ModelAdmin):
         "upload_date",
         "ocr_status",
         "extraction_status",
+        "llm_model_used",
+        "embedding_model_used",
     ]
     list_filter = ["ocr_completed", "extraction_completed", "upload_date"]
     search_fields = ["title"]
@@ -68,34 +138,53 @@ class DocumentAdmin(admin.ModelAdmin):
     actions = ["extract_genealogy_data"]
 
     def extract_genealogy_data(self, request, queryset):
-        """Admin action: Start genealogy extraction for selected documents"""
+        """Admin action: Start multi-phase genealogy extraction for selected documents"""
         success_count = 0
         error_count = 0
 
         for doc in queryset:
             if not doc.can_extract_genealogy():
                 error_count += 1
+                self.message_user(
+                    request,
+                    f"Document {doc.title} is not ready for extraction (OCR must be completed first).",
+                    level=messages.WARNING,
+                )
                 continue
 
             try:
-                task_id = doc.start_genealogy_extraction()
-                if task_id:
-                    success_count += 1
-            except ValueError as e:
+                # Get default models from environment
+                defaults = get_default_models()
+
+                # Store model configuration in document
+                doc.llm_model_used = defaults["llm_model"]
+                doc.embedding_model_used = defaults["embedding_model"]
+                doc.save(update_fields=["llm_model_used", "embedding_model_used"])
+
+                # Start multi-phase extraction process
+                task = process_genealogy_extraction.delay(str(doc.id))
+                success_count += 1
+                logger.info(f"Started genealogy extraction task {task.id} for document {doc}")
+
+            except Exception as e:
                 error_count += 1
                 self.message_user(
-                    request, f"Error extracting from {doc.title}: {e}", level="ERROR"
+                    request,
+                    f"Error starting extraction for {doc.title}: {e}",
+                    level=messages.ERROR,
                 )
 
         if success_count:
+            defaults = get_default_models()
             self.message_user(
-                request, f"Genealogy extraction started for {success_count} documents."
+                request,
+                f"Genealogy extraction started for {success_count} documents using {defaults['llm_model']} (LLM) and {defaults['embedding_model']} (embeddings).",
             )
         if error_count:
             self.message_user(
                 request,
                 f"{error_count} documents could not be processed.",
-                level="WARNING",
+                level=messages.WARNING,
             )
 
     extract_genealogy_data.short_description = (  # type: ignore
@@ -126,9 +215,7 @@ class DocumentAdmin(admin.ModelAdmin):
             # Debug: Log the number of files received
             logger.info("Batch upload: Received %d files from request", len(files))
             for i, f in enumerate(files):
-                logger.info(
-                    "Batch upload: File %d: %s (%d bytes)", i + 1, f.name, f.size
-                )
+                logger.info("Batch upload: File %d: %s (%d bytes)", i + 1, f.name, f.size)
 
             if not files:
                 messages.error(request, "No files were selected for upload.")
@@ -140,9 +227,7 @@ class DocumentAdmin(admin.ModelAdmin):
                 if self._is_valid_file_type(uploaded_file):
                     valid_files.append(uploaded_file)
                 else:
-                    messages.warning(
-                        request, f"Skipped {uploaded_file.name}: unsupported file type"
-                    )
+                    messages.warning(request, f"Skipped {uploaded_file.name}: unsupported file type")
 
             if not valid_files:
                 messages.error(request, "No valid files to upload.")
@@ -155,9 +240,7 @@ class DocumentAdmin(admin.ModelAdmin):
             if upload_mode == "single_document":
                 # Create one document with multiple pages
                 if not document_title:
-                    document_title = self._get_document_title_from_filename(
-                        valid_files[0].name
-                    )
+                    document_title = self._get_document_title_from_filename(valid_files[0].name)
 
                 document = Document.objects.create(
                     title=document_title,
@@ -169,9 +252,7 @@ class DocumentAdmin(admin.ModelAdmin):
                 # Sort files by extracted page number for proper ordering
                 files_with_page_numbers: list[tuple[int, UploadedFile]] = []
                 for uploaded_file in valid_files:
-                    page_num = self._extract_page_number_from_filename(
-                        uploaded_file.name
-                    )
+                    page_num = self._extract_page_number_from_filename(uploaded_file.name)
                     if page_num is None:
                         logger.warning(
                             "Could not extract page number from %s, using filename order",
@@ -197,9 +278,7 @@ class DocumentAdmin(admin.ModelAdmin):
             else:
                 # Create separate documents (original behavior)
                 for uploaded_file in valid_files:
-                    document_title = self._get_document_title_from_filename(
-                        uploaded_file.name
-                    )
+                    document_title = self._get_document_title_from_filename(uploaded_file.name)
                     document = Document.objects.create(
                         title=document_title,
                         languages=language,
@@ -228,9 +307,7 @@ class DocumentAdmin(admin.ModelAdmin):
                             task = process_page_ocr.delay(str(page.id))
                             ocr_started += 1
                         except ValueError as e:
-                            messages.warning(
-                                request, f"Could not start OCR for {page}: {e}"
-                            )
+                            messages.warning(request, f"Could not start OCR for {page}: {e}")
 
             if ocr_started > 0:
                 messages.success(
@@ -334,14 +411,10 @@ class DocumentPageAdmin(admin.ModelAdmin):
 
             except ValueError as e:
                 error_count += 1
-                self.message_user(
-                    request, f"Error processing {page}: {e}", level=messages.ERROR
-                )
+                self.message_user(request, f"Error processing {page}: {e}", level=messages.ERROR)
 
         if processed_count:
-            self.message_user(
-                request, f"OCR processing started for {processed_count} pages."
-            )
+            self.message_user(request, f"OCR processing started for {processed_count} pages.")
         if skipped_count:
             self.message_user(
                 request,
@@ -381,20 +454,14 @@ class DocumentPageAdmin(admin.ModelAdmin):
                 page.validate_for_ocr()
                 task = process_page_ocr.delay(str(page.id))
                 processed_count += 1
-                logger.info(
-                    "Started OCR reprocessing task %s for page %s", task.id, page
-                )
+                logger.info("Started OCR reprocessing task %s for page %s", task.id, page)
 
             except ValueError as e:
                 error_count += 1
-                self.message_user(
-                    request, f"Error reprocessing {page}: {e}", level=messages.ERROR
-                )
+                self.message_user(request, f"Error reprocessing {page}: {e}", level=messages.ERROR)
 
         if processed_count:
-            self.message_user(
-                request, f"OCR reprocessing started for {processed_count} pages."
-            )
+            self.message_user(request, f"OCR reprocessing started for {processed_count} pages.")
         if error_count:
             self.message_user(
                 request,
@@ -533,3 +600,108 @@ class ParentChildRelationshipAdmin(admin.ModelAdmin):
     ]
     readonly_fields = ["id", "created_at"]
     filter_horizontal = ["source_documents"]
+
+
+@admin.register(TextChunk)
+class TextChunkAdmin(admin.ModelAdmin):
+    form = TextChunkAdminForm
+    list_display = [
+        "__str__",
+        "document",
+        "chunk_type",
+        "sequence_number",
+        "generation_number",
+        "extraction_method",
+        "manually_reviewed",
+        "entities_extracted",
+        "genealogy_ids_count",
+    ]
+    list_filter = [
+        "chunk_type",
+        "extraction_method",
+        "manually_reviewed",
+        "entities_extracted",
+        "generation_number",
+        "document",
+    ]
+    search_fields = ["text_content", "generation_header", "genealogy_ids"]
+    readonly_fields = ["id", "created_at", "updated_at"]
+
+    fieldsets = (
+        (
+            "Basic Information",
+            {
+                "fields": (
+                    "document",
+                    "chunk_type",
+                    "sequence_number",
+                ),
+            },
+        ),
+        (
+            "Position",
+            {
+                "fields": ("start_page", "end_page"),
+            },
+        ),
+        (
+            "Genealogical Anchors",
+            {
+                "fields": (
+                    "generation_number",
+                    "generation_header",
+                    "genealogy_ids",
+                    "person_names",
+                    "dates",
+                    "places",
+                    "family_groups",
+                    "manually_reviewed",
+                ),
+                "description": "All genealogical data extracted from this chunk. You can manually review and correct these values.",
+            },
+        ),
+        (
+            "Content",
+            {
+                "fields": ("text_content",),
+            },
+        ),
+        (
+            "Processing Status",
+            {
+                "fields": ("entities_extracted", "extraction_method"),
+            },
+        ),
+        (
+            "Metadata",
+            {
+                "fields": ("id", "created_at", "updated_at"),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+
+    def genealogy_ids_count(self, obj: TextChunk) -> int:
+        return len(obj.genealogy_ids)
+
+    genealogy_ids_count.short_description = "ID Count"  # type: ignore
+
+    def extraction_method(self, obj: TextChunk) -> str:
+        """Display extraction method with color coding"""
+        method = obj.extraction_method
+        if method == "neural_network":
+            return format_html('<span style="color: blue; font-weight: bold;">🧠 Neural Network</span>')
+        if method == "hybrid":
+            return format_html('<span style="color: orange; font-weight: bold;">⚡ Hybrid</span>')
+        # regex
+        return format_html('<span style="color: gray;">🔍 Regex</span>')
+
+    extraction_method.short_description = "Extraction Method"  # type: ignore
+
+    def manually_reviewed(self, obj: TextChunk) -> str:
+        """Display manual review status with color coding"""
+        if obj.manually_reviewed:
+            return format_html('<span style="color: green; font-weight: bold;">✅ Reviewed</span>')
+        return format_html('<span style="color: orange;">⏳ Pending</span>')
+
+    manually_reviewed.short_description = "Manual Review"  # type: ignore

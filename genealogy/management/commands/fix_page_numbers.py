@@ -30,9 +30,7 @@ class Command(BaseCommand):
         document_id = options["document_id"]
 
         if dry_run:
-            self.stdout.write(
-                self.style.WARNING("DRY RUN MODE - No changes will be made")
-            )
+            self.stdout.write(self.style.WARNING("DRY RUN MODE - No changes will be made"))
 
         # Get pages to process
         queryset = DocumentPage.objects.all()
@@ -52,16 +50,10 @@ class Command(BaseCommand):
         documents_to_update: dict[UUID, list[tuple[DocumentPage, int]]] = {}
 
         for page in pages:
-            extracted_page_num = self.extract_page_number_from_filename(
-                page.original_filename
-            )
+            extracted_page_num = self.extract_page_number_from_filename(page.original_filename)
 
             if extracted_page_num is None:
-                self.stdout.write(
-                    self.style.WARNING(
-                        f"Could not extract page number from: {page.original_filename}"
-                    )
-                )
+                self.stdout.write(self.style.WARNING(f"Could not extract page number from: {page.original_filename}"))
                 error_count += 1
                 continue
 
@@ -106,11 +98,7 @@ class Command(BaseCommand):
                         transaction.set_rollback(True)
 
                 except Exception as e:
-                    self.stdout.write(
-                        self.style.ERROR(
-                            f"Error processing document {document_id}: {e}"
-                        )
-                    )
+                    self.stdout.write(self.style.ERROR(f"Error processing document {document_id}: {e}"))
                     error_count += len(page_updates)
 
         # Summary

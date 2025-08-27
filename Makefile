@@ -144,17 +144,77 @@ test-tasks: ensure-containers ## Run only task tests in Docker
 
 
 ##@ Docker Commands
+# Resolve mDNS hostname for Ollama host
+resolve-ollama-host:
+	@echo "Resolving Ollama host..."
+	@if [ -f .env ]; then \
+		OLLAMA_HOST=$$(grep "^OLLAMA_HOST=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "'\'''); \
+		if [ -n "$$OLLAMA_HOST" ] && echo "$$OLLAMA_HOST" | grep -q "\.local$$"; then \
+			echo "Found mDNS hostname in .env: $$OLLAMA_HOST"; \
+			if command -v avahi-resolve >/dev/null 2>&1; then \
+				echo "Attempting to resolve $$OLLAMA_HOST using mDNS..."; \
+				RESOLVED_IP=$$(avahi-resolve -4 -n "$$OLLAMA_HOST" 2>/dev/null | awk '{print $$2}' | head -1); \
+				if [ -n "$$RESOLVED_IP" ] && [ "$$RESOLVED_IP" != "$$OLLAMA_HOST" ]; then \
+					echo "✅ Resolved $$OLLAMA_HOST to $$RESOLVED_IP"; \
+					echo "OLLAMA_HOST=$$RESOLVED_IP" > .env.ollama; \
+					OLLAMA_PORT=$$(grep "^OLLAMA_PORT=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "'\'''); \
+					OLLAMA_EMBEDDING_MODEL=$$(grep "^OLLAMA_EMBEDDING_MODEL=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "'\'''); \
+					OLLAMA_LLM_MODEL=$$(grep "^OLLAMA_LLM_MODEL=" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' "'\'''); \
+					[ -n "$$OLLAMA_PORT" ] && echo "OLLAMA_PORT=$$OLLAMA_PORT" >> .env.ollama; \
+					[ -n "$$OLLAMA_EMBEDDING_MODEL" ] && echo "OLLAMA_EMBEDDING_MODEL=$$OLLAMA_EMBEDDING_MODEL" >> .env.ollama; \
+					[ -n "$$OLLAMA_LLM_MODEL" ] && echo "OLLAMA_LLM_MODEL=$$OLLAMA_LLM_MODEL" >> .env.ollama; \
+				else \
+					echo "⚠️  Could not resolve $$OLLAMA_HOST, using original configuration"; \
+					rm -f .env.ollama; \
+				fi; \
+			else \
+				echo "⚠️  avahi-resolve not available, using original configuration"; \
+				rm -f .env.ollama; \
+			fi; \
+		else \
+			echo "OLLAMA_HOST is not an mDNS hostname (.local), no resolution needed"; \
+			rm -f .env.ollama; \
+		fi; \
+	else \
+		echo "No .env file found, skipping mDNS resolution"; \
+		rm -f .env.ollama; \
+	fi
+
 build: ## Build Docker containers
 	@echo "$(YELLOW)🐳 Building Docker containers...$(NC)"
 	docker compose build
 
-up: ## Start all Docker services
+up: resolve-ollama-host ## Start all Docker services
 	@echo "$(YELLOW)🚀 Starting Docker services...$(NC)"
-	docker compose up -d
+	@ENV_FILES=""; \
+	if [ -f .env ]; then \
+		ENV_FILES="--env-file .env"; \
+	fi; \
+	if [ -f .env.ollama ]; then \
+		echo "Using dynamically resolved Ollama configuration"; \
+		ENV_FILES="$$ENV_FILES --env-file .env.ollama"; \
+	fi; \
+	if [ -n "$$ENV_FILES" ]; then \
+		docker compose $$ENV_FILES up -d; \
+	else \
+		docker compose up -d; \
+	fi
 
-up-build: ## Build and start all Docker services
+up-build: resolve-ollama-host ## Build and start all Docker services
 	@echo "$(YELLOW)🚀 Building and starting Docker services...$(NC)"
-	docker compose up --build -d
+	@ENV_FILES=""; \
+	if [ -f .env ]; then \
+		ENV_FILES="--env-file .env"; \
+	fi; \
+	if [ -f .env.ollama ]; then \
+		echo "Using dynamically resolved Ollama configuration"; \
+		ENV_FILES="$$ENV_FILES --env-file .env.ollama"; \
+	fi; \
+	if [ -n "$$ENV_FILES" ]; then \
+		docker compose $$ENV_FILES up --build -d; \
+	else \
+		docker compose up --build -d; \
+	fi
 
 down: ## Stop all Docker services
 	@echo "$(YELLOW)⏹️ Stopping Docker services...$(NC)"

@@ -19,9 +19,7 @@ class DocumentModelTests(TestCase):
 
     def test_can_process_ocr_with_pages(self):
         """Document with unprocessed pages should be ready for OCR"""
-        test_file = SimpleUploadedFile(
-            "page1.pdf", b"fake pdf content", content_type="application/pdf"
-        )
+        test_file = SimpleUploadedFile("page1.pdf", b"fake pdf content", content_type="application/pdf")
         DocumentPage.objects.create(
             document=self.document,
             page_number=1,
@@ -42,12 +40,8 @@ class DocumentModelTests(TestCase):
 
     def test_update_ocr_status_all_completed(self):
         """update_ocr_status should mark complete if all pages done"""
-        test_file1 = SimpleUploadedFile(
-            "page1.pdf", b"fake pdf content", content_type="application/pdf"
-        )
-        test_file2 = SimpleUploadedFile(
-            "page2.pdf", b"fake pdf content", content_type="application/pdf"
-        )
+        test_file1 = SimpleUploadedFile("page1.pdf", b"fake pdf content", content_type="application/pdf")
+        test_file2 = SimpleUploadedFile("page2.pdf", b"fake pdf content", content_type="application/pdf")
 
         DocumentPage.objects.create(
             document=self.document,
@@ -67,15 +61,9 @@ class DocumentModelTests(TestCase):
 
     def test_ocr_progress_with_pages(self):
         """ocr_progress should return progress dict"""
-        test_file1 = SimpleUploadedFile(
-            "page1.pdf", b"fake pdf content", content_type="application/pdf"
-        )
-        test_file2 = SimpleUploadedFile(
-            "page2.pdf", b"fake pdf content", content_type="application/pdf"
-        )
-        test_file3 = SimpleUploadedFile(
-            "page3.pdf", b"fake pdf content", content_type="application/pdf"
-        )
+        test_file1 = SimpleUploadedFile("page1.pdf", b"fake pdf content", content_type="application/pdf")
+        test_file2 = SimpleUploadedFile("page2.pdf", b"fake pdf content", content_type="application/pdf")
+        test_file3 = SimpleUploadedFile("page3.pdf", b"fake pdf content", content_type="application/pdf")
 
         DocumentPage.objects.create(
             document=self.document,

@@ -31,11 +31,30 @@ The demo processes a couple sample pages from a book about my family and extract
 
 ## Current Status
 
-OCR processing pipeline implemented: multi-format documents (PDF, JPG, PNG, TIFF), multi-language OCR (English/Dutch), batch upload, background processing with Celery.
+### OCR Processing Pipeline - Testing & Refinement
+- Multi-format document processing (PDF, JPG, PNG, TIFF) with Tesseract
+- Multi-language support (English/Dutch) for genealogical texts
+- Advanced rotation detection using computer vision techniques (Hough line detection, projection profiles)
+- Two-stage rotation correction: major angles (0°/90°/180°/270°) + fine-angle adjustments (±10°)
+- Batch upload functionality and background processing with Celery/Redis
 
-Uses Django admin interface to prototype and test business logic before building custom UI. This approach allows rapid iteration on data models and processing workflows.
+### AI-Powered Entity Extraction - Implemented
+- **Neural Network NER (Named Entity Recognition)**: Custom BERT-based model fine-tuned for genealogical entities
+- **Performance**: 96.84% F1 score (harmonic mean of precision and recall) across PERSON_NAME, DATE, PLACE, GENEALOGY_ID, FAMILY_GROUP entities
+- **Dual Extraction Pipeline**: Hybrid approach combining traditional regex patterns with neural network predictions
+- **Training Data Curation**: Django admin interface for manual refinement of genealogical anchor extractions
 
-**Next**: AI-powered extraction to structured genealogy data.
+### Text Processing & Data Standardization
+- **Generation-Aware Chunking**: Intelligent segmentation preserving genealogical document structure
+- **Date Standardization**: Multi-format Dutch/English date parsing ("15 maart 1654" → "1654-03-15")
+- **Genealogical ID Correction**: Systematic fixes for OCR errors in Roman numerals (IL→II, XIL→XII)
+- **Family Context Tracking**: Infers individual IDs from family group headers ("a. John" → "X.9.a")
+
+### Development Approach
+Uses Django admin interface to prototype and test business logic before building custom UI. This approach enables rapid iteration on data models and processing workflows while maintaining data quality through manual review capabilities.
+
+**Current Focus**: Optimizing OCR quality and refining neural network training data
+**Next Phase**: LLM integration for natural language queries and relationship inference
 
 ## Sample Data
 
@@ -67,7 +86,20 @@ python manage.py runserver
 
 ## Usage
 
-Upload documents via Django admin → automatic OCR processing → review extracted text and confidence scores.
+**Document Processing Workflow:**
+1. Upload documents via Django admin interface
+2. Automatic OCR processing with rotation detection and correction
+3. Intelligent text chunking with genealogical structure preservation
+4. Dual entity extraction (regex + neural network NER)
+5. Review extracted text, confidence scores, and genealogical anchors
+6. Manual curation of training data for neural network refinement
+
+**Current Capabilities:**
+- Multi-page document OCR with confidence scoring
+- Genealogical entity recognition and extraction
+- Date standardization and genealogical ID correction
+- Visual comparison of extraction methods (regex vs. neural network)
+- Manual anchor curation for gold standard training data
 
 ## Development
 
@@ -75,7 +107,14 @@ Upload documents via Django admin → automatic OCR processing → review extrac
 
 **Tests:** `make test`
 
-**Architecture:** Django + PostgreSQL + Celery + Redis + Tesseract OCR
+**Architecture:** Django + PostgreSQL + Celery + Redis + Tesseract OCR + OpenCV + PyTorch
+
+**Key Technologies:**
+- **Computer Vision**: OpenCV for advanced rotation detection and correction
+- **Machine Learning**: PyTorch + Transformers (BERT) for genealogical Named Entity Recognition
+- **Data Storage**: PostgreSQL with custom ArrayField handling for genealogical anchors
+- **Background Processing**: Celery with Redis for scalable document processing
+- **OCR**: Tesseract with multi-language support and confidence scoring
 
 Run `make help` to see all available development commands.
 

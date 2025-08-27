@@ -138,6 +138,8 @@ Thumbs.db
 media/
 staticfiles/
 static_root/
+models/
+training_*/
 
 # Docker
 .dockerignore

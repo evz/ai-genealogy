@@ -3,6 +3,8 @@ import uuid
 from django.db import models
 from django.utils import timezone
 
+from .fields import CommaSeparatedArrayField
+
 
 class Document(models.Model):
     """Source document containing genealogical information"""
@@ -24,6 +26,12 @@ class Document(models.Model):
     upload_date = models.DateTimeField(default=timezone.now)
     ocr_completed = models.BooleanField(default=False)
     extraction_completed = models.BooleanField(default=False)
+
+    # Model configuration for processing
+    llm_model_used = models.CharField(max_length=100, blank=True, help_text="LLM model used for entity extraction")
+    embedding_model_used = models.CharField(
+        max_length=100, blank=True, help_text="Embedding model used for RAG processing"
+    )
 
     def __str__(self):
         return self.title
@@ -60,11 +68,7 @@ class Document(models.Model):
 
     def can_process_ocr(self):
         """Check if document has pages ready for OCR processing"""
-        return bool(
-            self.pages.exists()
-            and not self.ocr_completed
-            and self.pages.filter(ocr_completed=False).exists()
-        )
+        return bool(self.pages.exists() and not self.ocr_completed and self.pages.filter(ocr_completed=False).exists())
 
     def can_extract_genealogy(self):
         """Check if document is ready for genealogy extraction"""
@@ -92,9 +96,7 @@ class Document(models.Model):
         return "\n\n".join(
             [
                 f"=== Page {page.page_number} ===\n{page.ocr_text}"
-                for page in self.pages.filter(ocr_completed=True).order_by(
-                    "page_number"
-                )
+                for page in self.pages.filter(ocr_completed=True).order_by("page_number")
                 if page.ocr_text.strip()
             ]
         )
@@ -104,23 +106,17 @@ class DocumentPage(models.Model):
     """Individual page/image within a document"""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    document = models.ForeignKey(
-        Document, on_delete=models.CASCADE, related_name="pages"
-    )
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="pages")
     page_number = models.PositiveIntegerField()
     image_file = models.FileField(upload_to="document_pages/")
 
     # OCR processing status
     ocr_completed = models.BooleanField(default=False)
     ocr_text = models.TextField(blank=True, help_text="Extracted text from OCR")
-    ocr_confidence = models.FloatField(
-        null=True, blank=True, help_text="OCR confidence score 0-100"
-    )
+    ocr_confidence = models.FloatField(null=True, blank=True, help_text="OCR confidence score 0-100")
 
     # Image processing metadata
-    rotation_applied = models.FloatField(
-        default=0.0, help_text="Rotation correction applied in degrees"
-    )
+    rotation_applied = models.FloatField(default=0.0, help_text="Rotation correction applied in degrees")
     original_filename = models.CharField(max_length=255, blank=True)
 
     created_at = models.DateTimeField(default=timezone.now)
@@ -158,12 +154,8 @@ class Place(models.Model):
     locality = models.CharField(max_length=255, blank=True)  # City/town
     region = models.CharField(max_length=255, blank=True)  # State/province
     country = models.CharField(max_length=255, blank=True)
-    latitude = models.DecimalField(
-        max_digits=9, decimal_places=6, null=True, blank=True
-    )
-    longitude = models.DecimalField(
-        max_digits=9, decimal_places=6, null=True, blank=True
-    )
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
 
     class Meta:
         unique_together = ["name", "locality", "region", "country"]
@@ -193,33 +185,23 @@ class Person(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     given_names = models.CharField(max_length=255)
     surname = models.CharField(max_length=255)
-    maiden_name = models.CharField(
-        max_length=255, blank=True, help_text="Previous surname if changed"
-    )
+    maiden_name = models.CharField(max_length=255, blank=True, help_text="Previous surname if changed")
     gender = models.CharField(max_length=1, choices=GENDER_CHOICES, default="U")
 
     # Life events
     birth_date = models.DateField(null=True, blank=True)
     birth_date_estimated = models.BooleanField(default=False)
-    birth_place = models.ForeignKey(
-        Place, on_delete=models.SET_NULL, null=True, blank=True, related_name="births"
-    )
+    birth_place = models.ForeignKey(Place, on_delete=models.SET_NULL, null=True, blank=True, related_name="births")
 
     death_date = models.DateField(null=True, blank=True)
     death_date_estimated = models.BooleanField(default=False)
-    death_place = models.ForeignKey(
-        Place, on_delete=models.SET_NULL, null=True, blank=True, related_name="deaths"
-    )
+    death_place = models.ForeignKey(Place, on_delete=models.SET_NULL, null=True, blank=True, related_name="deaths")
 
     # Genealogical identifiers (from Dutch family books)
-    genealogical_id = models.CharField(
-        max_length=50, blank=True, help_text="e.g., II.1.a"
-    )
+    genealogical_id = models.CharField(max_length=50, blank=True, help_text="e.g., II.1.a")
 
     # Source tracking
-    source_documents = models.ManyToManyField(
-        Document, blank=True, related_name="persons"
-    )
+    source_documents = models.ManyToManyField(Document, blank=True, related_name="persons")
 
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
@@ -251,9 +233,7 @@ class Partnership(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     partners = models.ManyToManyField(Person, related_name="partnerships")
-    partnership_type = models.CharField(
-        max_length=20, choices=PARTNERSHIP_TYPES, default="MARRIAGE"
-    )
+    partnership_type = models.CharField(max_length=20, choices=PARTNERSHIP_TYPES, default="MARRIAGE")
 
     # Partnership start details
     start_date = models.DateField(null=True, blank=True)
@@ -269,14 +249,10 @@ class Partnership(models.Model):
     # Partnership end details
     end_date = models.DateField(null=True, blank=True)
     end_date_estimated = models.BooleanField(default=False)
-    end_reason = models.CharField(
-        max_length=50, blank=True, help_text="divorce, death, separation, etc."
-    )
+    end_reason = models.CharField(max_length=50, blank=True, help_text="divorce, death, separation, etc.")
 
     # Source tracking
-    source_documents = models.ManyToManyField(
-        Document, blank=True, related_name="partnerships"
-    )
+    source_documents = models.ManyToManyField(Document, blank=True, related_name="partnerships")
 
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
@@ -306,9 +282,7 @@ class Event(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     event_type = models.CharField(max_length=5, choices=EVENT_TYPES)
-    person = models.ForeignKey(
-        Person, on_delete=models.CASCADE, related_name="events", null=True, blank=True
-    )
+    person = models.ForeignKey(Person, on_delete=models.CASCADE, related_name="events", null=True, blank=True)
     partnership = models.ForeignKey(
         Partnership,
         on_delete=models.CASCADE,
@@ -319,16 +293,12 @@ class Event(models.Model):
 
     date = models.DateField(null=True, blank=True)
     date_estimated = models.BooleanField(default=False)
-    place = models.ForeignKey(
-        Place, on_delete=models.SET_NULL, null=True, blank=True, related_name="events"
-    )
+    place = models.ForeignKey(Place, on_delete=models.SET_NULL, null=True, blank=True, related_name="events")
 
     description = models.TextField(blank=True)
 
     # Source tracking
-    source_documents = models.ManyToManyField(
-        Document, blank=True, related_name="events"
-    )
+    source_documents = models.ManyToManyField(Document, blank=True, related_name="events")
 
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
@@ -354,15 +324,9 @@ class ParentChildRelationship(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    child = models.ForeignKey(
-        Person, on_delete=models.CASCADE, related_name="parent_relationships"
-    )
-    parent = models.ForeignKey(
-        Person, on_delete=models.CASCADE, related_name="child_relationships"
-    )
-    relationship_type = models.CharField(
-        max_length=15, choices=RELATIONSHIP_TYPES, default="BIOLOGICAL"
-    )
+    child = models.ForeignKey(Person, on_delete=models.CASCADE, related_name="parent_relationships")
+    parent = models.ForeignKey(Person, on_delete=models.CASCADE, related_name="child_relationships")
+    relationship_type = models.CharField(max_length=15, choices=RELATIONSHIP_TYPES, default="BIOLOGICAL")
 
     # Optional: link to partnership if child is from a specific partnership
     partnership = models.ForeignKey(
@@ -374,9 +338,7 @@ class ParentChildRelationship(models.Model):
     )
 
     # Source tracking
-    source_documents = models.ManyToManyField(
-        Document, blank=True, related_name="parent_child_relationships"
-    )
+    source_documents = models.ManyToManyField(Document, blank=True, related_name="parent_child_relationships")
 
     created_at = models.DateTimeField(default=timezone.now)
 
@@ -389,3 +351,98 @@ class ParentChildRelationship(models.Model):
             f"{self.get_relationship_type_display().lower()} child of "
             f"{self.parent.full_name}"
         )
+
+
+class TextChunk(models.Model):
+    """Text chunk extracted from a document with genealogical anchors"""
+
+    CHUNK_TYPES = [
+        ("HEADER", "Generation Header"),
+        ("CONTENT", "Genealogy Content"),
+        ("INDEX", "Index/Reference"),
+        ("OTHER", "Other"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="text_chunks")
+
+    # Content
+    text_content = models.TextField(help_text="The actual text content of this chunk")
+    chunk_type = models.CharField(max_length=10, choices=CHUNK_TYPES, default="CONTENT")
+
+    # Position information
+    start_page = models.PositiveIntegerField(help_text="First page number this chunk appears on")
+    end_page = models.PositiveIntegerField(help_text="Last page number this chunk appears on")
+    sequence_number = models.PositiveIntegerField(help_text="Order within document")
+
+    # Genealogical anchors (stored in corrected/canonical form)
+    generation_number = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Generation number (I=1, II=2, etc.)"
+    )
+    generation_header = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Generation header text if this chunk contains one",
+    )
+    genealogy_ids = CommaSeparatedArrayField(
+        models.CharField(max_length=20),
+        default=list,
+        blank=True,
+        help_text="Corrected genealogical IDs found in this chunk (Enter comma-separated values: II.1.a, II.1.b)",
+    )
+
+    # Additional extracted entities for gold standard curation
+    person_names = CommaSeparatedArrayField(
+        models.CharField(max_length=100),
+        default=list,
+        blank=True,
+        help_text="Person names found in this chunk (Enter comma-separated values: Johan van der Berg, Maria Janssen)",
+    )
+    dates = CommaSeparatedArrayField(
+        models.CharField(max_length=50),
+        default=list,
+        blank=True,
+        help_text="Dates found in this chunk (Enter comma-separated ISO dates: 1654-03-15, 1658-12-22)",
+    )
+    places = CommaSeparatedArrayField(
+        models.CharField(max_length=100),
+        default=list,
+        blank=True,
+        help_text="Places found in this chunk (Enter comma-separated values: Amsterdam, Utrecht, Haarlem)",
+    )
+    family_groups = CommaSeparatedArrayField(
+        models.CharField(max_length=100),
+        default=list,
+        blank=True,
+        help_text="Family group headers found in this chunk (Enter comma-separated values: II.9. Children of...)",
+    )
+
+    # Processing status
+    entities_extracted = models.BooleanField(
+        default=False, help_text="Whether entities have been extracted from this chunk"
+    )
+    manually_reviewed = models.BooleanField(
+        default=False,
+        help_text="Whether this chunk has been manually reviewed and curated",
+    )
+    extraction_method = models.CharField(
+        max_length=20,
+        choices=[
+            ("regex", "Regex patterns"),
+            ("neural_network", "Neural network (NER)"),
+            ("hybrid", "Neural network with regex fallback"),
+        ],
+        default="regex",
+        help_text="Method used to extract genealogical anchors",
+    )
+
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["document", "sequence_number"]
+        unique_together = ["document", "sequence_number"]
+
+    def __str__(self):
+        chunk_preview = self.text_content[:50] + "..." if len(self.text_content) > 50 else self.text_content
+        return f"{self.document.title} - Chunk {self.sequence_number}: {chunk_preview}"

@@ -46,18 +46,14 @@ class Command(BaseCommand):
         ]
 
         if not samples_dir.exists():
-            self.stdout.write(
-                self.style.ERROR("❌ Samples directory not found at: %s") % samples_dir
-            )
+            self.stdout.write(self.style.ERROR("❌ Samples directory not found at: %s") % samples_dir)
             return
 
         # Process each sample file
         for filename, description in sample_files:
             file_path = samples_dir / filename
             if not file_path.exists():
-                self.stdout.write(
-                    self.style.WARNING("⚠️ Sample file not found: %s") % filename
-                )
+                self.stdout.write(self.style.WARNING("⚠️ Sample file not found: %s") % filename)
                 continue
 
             self.stdout.write(f"\n📄 Processing: {filename}")
@@ -79,9 +75,7 @@ class Command(BaseCommand):
 
         self.stdout.write("\n" + "=" * 50)
         self.stdout.write("✅ Demo complete!")
-        self.stdout.write(
-            "📱 View results at: http://localhost:8000/admin/genealogy/document/"
-        )
+        self.stdout.write("📱 View results at: http://localhost:8000/admin/genealogy/document/")
 
     def _clear_demo_data(self):
         """Remove any existing demo data"""
@@ -139,8 +133,7 @@ class Command(BaseCommand):
                 page.save()
 
                 self.stdout.write(
-                    f"   ✅ OCR complete - {confidence:.1f}% confidence, "
-                    f"{len(text)} characters extracted"
+                    f"   ✅ OCR complete - {confidence:.1f}% confidence, " f"{len(text)} characters extracted"
                 )
 
                 # Show first 100 characters of extracted text
@@ -150,11 +143,7 @@ class Command(BaseCommand):
                 self.stdout.write(f"   📝 Preview: {preview}")
 
             except Exception as e:
-                self.stdout.write(
-                    self.style.ERROR(
-                        f"   ❌ OCR failed for page {page.page_number}: {e}"
-                    )
-                )
+                self.stdout.write(self.style.ERROR(f"   ❌ OCR failed for page {page.page_number}: {e}"))
 
     def _process_ocr_async(self, document: Document):
         """Process OCR using Celery tasks"""
@@ -166,18 +155,11 @@ class Command(BaseCommand):
                 page.validate_for_ocr()
                 task = process_page_ocr.delay(str(page.id))
                 task_count += 1
-                self.stdout.write(
-                    f"   📋 Queued OCR task {task.id} for page {page.page_number}"
-                )
+                self.stdout.write(f"   📋 Queued OCR task {task.id} for page {page.page_number}")
             except Exception as e:
-                self.stdout.write(
-                    self.style.ERROR(
-                        f"   ❌ Failed to queue OCR for page {page.page_number}: {e}"
-                    )
-                )
+                self.stdout.write(self.style.ERROR(f"   ❌ Failed to queue OCR for page {page.page_number}: {e}"))
 
         if task_count > 0:
             self.stdout.write(
-                f"   ⏱️ {task_count} OCR task(s) queued. "
-                "Check the admin interface to see results as they complete."
+                f"   ⏱️ {task_count} OCR task(s) queued. " "Check the admin interface to see results as they complete."
             )

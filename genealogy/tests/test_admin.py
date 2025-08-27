@@ -35,15 +35,9 @@ class AdminBatchUploadTests(TestCase):
     def test_page_number_extraction_and_ordering(self):
         """Business logic: Extract page numbers from filenames and order correctly"""
         # Create test files with page numbers in filenames (uploaded out of order)
-        file3 = SimpleUploadedFile(
-            "document_003.pdf", b"content3", content_type="application/pdf"
-        )
-        file1 = SimpleUploadedFile(
-            "document_001.pdf", b"content1", content_type="application/pdf"
-        )
-        file2 = SimpleUploadedFile(
-            "document_002.pdf", b"content2", content_type="application/pdf"
-        )
+        file3 = SimpleUploadedFile("document_003.pdf", b"content3", content_type="application/pdf")
+        file1 = SimpleUploadedFile("document_001.pdf", b"content1", content_type="application/pdf")
+        file2 = SimpleUploadedFile("document_002.pdf", b"content2", content_type="application/pdf")
 
         url = reverse("admin:genealogy_document_batch_upload")
         self.client.post(
@@ -70,12 +64,8 @@ class AdminBatchUploadTests(TestCase):
 
     def test_upload_mode_creates_correct_structure(self):
         """Business logic: Different upload modes create different structures"""
-        file1 = SimpleUploadedFile(
-            "family_history_001.pdf", b"content1", content_type="application/pdf"
-        )
-        file2 = SimpleUploadedFile(
-            "family_history_002.pdf", b"content2", content_type="application/pdf"
-        )
+        file1 = SimpleUploadedFile("family_history_001.pdf", b"content1", content_type="application/pdf")
+        file2 = SimpleUploadedFile("family_history_002.pdf", b"content2", content_type="application/pdf")
 
         url = reverse("admin:genealogy_document_batch_upload")
 
@@ -100,9 +90,7 @@ class AdminBatchUploadTests(TestCase):
     def test_batch_upload_multiple_files(self):
         """Should create multiple documents from multiple files"""
         # Create test files
-        file1 = SimpleUploadedFile(
-            "doc1.pdf", b"content1", content_type="application/pdf"
-        )
+        file1 = SimpleUploadedFile("doc1.pdf", b"content1", content_type="application/pdf")
         file2 = SimpleUploadedFile("doc2.jpg", b"content2", content_type="image/jpeg")
 
         url = reverse("admin:genealogy_document_batch_upload")
@@ -126,12 +114,8 @@ class AdminBatchUploadTests(TestCase):
     def test_batch_upload_invalid_file_type(self):
         """Should skip unsupported file types"""
         # Create test files - one valid, one invalid
-        valid_file = SimpleUploadedFile(
-            "doc.pdf", b"content", content_type="application/pdf"
-        )
-        invalid_file = SimpleUploadedFile(
-            "doc.txt", b"content", content_type="text/plain"
-        )
+        valid_file = SimpleUploadedFile("doc.pdf", b"content", content_type="application/pdf")
+        invalid_file = SimpleUploadedFile("doc.txt", b"content", content_type="text/plain")
 
         url = reverse("admin:genealogy_document_batch_upload")
         response = self.client.post(
@@ -170,9 +154,7 @@ class AdminBatchUploadTests(TestCase):
 
         for filename, expected_title in test_cases:
             with self.subTest(filename=filename):
-                test_file = SimpleUploadedFile(
-                    filename, b"content", content_type="application/pdf"
-                )
+                test_file = SimpleUploadedFile(filename, b"content", content_type="application/pdf")
 
                 url = reverse("admin:genealogy_document_batch_upload")
                 self.client.post(
@@ -198,12 +180,8 @@ class AdminBatchUploadTests(TestCase):
         mock_task_delay.return_value.id = "test-task-id"
 
         # Create test files
-        file1 = SimpleUploadedFile(
-            "page1.pdf", b"content1", content_type="application/pdf"
-        )
-        file2 = SimpleUploadedFile(
-            "page2.pdf", b"content2", content_type="application/pdf"
-        )
+        file1 = SimpleUploadedFile("page1.pdf", b"content1", content_type="application/pdf")
+        file2 = SimpleUploadedFile("page2.pdf", b"content2", content_type="application/pdf")
 
         url = reverse("admin:genealogy_document_batch_upload")
         response = self.client.post(
@@ -239,17 +217,13 @@ class AdminBatchUploadTests(TestCase):
         page1 = DocumentPage.objects.create(
             document=document,
             page_number=1,
-            image_file=SimpleUploadedFile(
-                "page1.pdf", b"content1", content_type="application/pdf"
-            ),
+            image_file=SimpleUploadedFile("page1.pdf", b"content1", content_type="application/pdf"),
             original_filename="page1.pdf",
         )
         page2 = DocumentPage.objects.create(
             document=document,
             page_number=2,
-            image_file=SimpleUploadedFile(
-                "page2.pdf", b"content2", content_type="application/pdf"
-            ),
+            image_file=SimpleUploadedFile("page2.pdf", b"content2", content_type="application/pdf"),
             original_filename="page2.pdf",
             ocr_completed=True,  # Already processed
         )
@@ -279,9 +253,7 @@ class AdminBatchUploadTests(TestCase):
         page = DocumentPage.objects.create(
             document=document,
             page_number=1,
-            image_file=SimpleUploadedFile(
-                "page1.pdf", b"content1", content_type="application/pdf"
-            ),
+            image_file=SimpleUploadedFile("page1.pdf", b"content1", content_type="application/pdf"),
             original_filename="page1.pdf",
             ocr_completed=True,
             ocr_text="Existing text",

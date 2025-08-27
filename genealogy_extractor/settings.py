@@ -133,16 +133,12 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 # File upload settings - support very large batch uploads
 DATA_UPLOAD_MAX_MEMORY_SIZE = 20 * 1024 * 1024 * 1024  # 20 GB
-FILE_UPLOAD_MAX_MEMORY_SIZE = (
-    500 * 1024 * 1024
-)  # 500 MB per individual file (107.5MB files need more headroom)
+FILE_UPLOAD_MAX_MEMORY_SIZE = 500 * 1024 * 1024  # 500 MB per individual file (107.5MB files need more headroom)
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 1000  # Support up to 1000 files in batch upload
 
 # Celery configuration
 CELERY_BROKER_URL = f"redis://{os.environ['REDIS_HOST']}:{os.environ['REDIS_PORT']}/0"
-CELERY_RESULT_BACKEND = (
-    f"redis://{os.environ['REDIS_HOST']}:{os.environ['REDIS_PORT']}/0"
-)
+CELERY_RESULT_BACKEND = f"redis://{os.environ['REDIS_HOST']}:{os.environ['REDIS_PORT']}/0"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"

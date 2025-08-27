@@ -4,6 +4,8 @@ import pytesseract
 from pdf2image import convert_from_bytes
 from PIL import Image, ImageEnhance
 
+from .rotation_detector import RotationDetector
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,6 +20,7 @@ class OCRProcessor:
             language: Tesseract language string ('eng', 'nld', 'eng+nld')
         """
         self.language = language
+        self.rotation_detector = RotationDetector()
 
         # Tesseract configuration for better accuracy
         # Use simpler config without character whitelist to avoid shell quoting issues
@@ -35,20 +38,17 @@ class OCRProcessor:
         """
         try:
             # Determine file type and load image
-            if file_path.lower().endswith(".pdf"):
-                image = self._pdf_to_image(file_path)
-            else:
-                image = Image.open(file_path)
+            image = self._pdf_to_image(file_path) if file_path.lower().endswith(".pdf") else Image.open(file_path)
 
             # Convert to grayscale for better OCR
             if image.mode != "L":
                 image = image.convert("L")
 
-            # Detect and correct rotation
-            rotation_applied = self._detect_and_correct_rotation(image)
-            if rotation_applied != 0:
+            # Detect and correct rotation using new method
+            rotation_applied, confidence = self.rotation_detector.detect_rotation(image)
+            if abs(rotation_applied) > 0.5:  # Only rotate if angle is significant
                 image = image.rotate(-rotation_applied, expand=True)
-                logger.info(f"Applied rotation correction: {rotation_applied} degrees")
+                logger.info(f"Applied rotation correction: {rotation_applied:.2f}° (confidence: {confidence:.2f})")
 
             # Enhance image for better OCR
             image = self._enhance_image(image)
@@ -80,30 +80,6 @@ class OCRProcessor:
         except Exception as e:
             logger.exception(f"PDF conversion failed for {file_path}: {e}")
             raise
-
-    def _detect_and_correct_rotation(self, image: Image.Image) -> float:
-        """
-        Detect rotation angle using OSD (Orientation and Script Detection)
-
-        Returns:
-            Rotation angle in degrees (0, 90, 180, 270, or fine-tuned angle)
-        """
-        try:
-            # Use Tesseract's OSD to detect orientation
-            osd_data = pytesseract.image_to_osd(image, config="--psm 0")
-
-            # Parse orientation from OSD output
-            rotation_angle = 0
-            for line in osd_data.split("\n"):
-                if "Rotate:" in line:
-                    rotation_angle = int(line.split(":")[1].strip())
-                    break
-
-            return rotation_angle
-
-        except Exception as e:
-            logger.warning(f"Rotation detection failed, assuming no rotation: {e}")
-            return 0
 
     def _enhance_image(self, image: Image.Image) -> Image.Image:
         """Enhance grayscale image quality for better OCR results"""

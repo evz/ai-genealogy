@@ -5,6 +5,12 @@ redis==5.0.1
 pytesseract==0.3.13
 Pillow==11.0.0
 pdf2image==1.17.0
+requests==2.32.3
+torch==2.8.0
+transformers==4.55.4
+scikit-learn==1.7.1
+datasets==4.0.0
+opencv-python==4.10.0.84
 
 # Development dependencies
 ruff==0.8.4
