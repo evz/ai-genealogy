@@ -570,7 +570,6 @@ class GenealogyEntityExtractor:
 
         for match in pattern.finditer(text):
             start, end = match.span()
-            entity_text = match.group()
 
             # Find overlapping tokens
             overlapping_tokens = []

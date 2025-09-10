@@ -304,7 +304,7 @@ class DocumentAdmin(admin.ModelAdmin):
                     for page in unprocessed_pages:
                         try:
                             page.validate_for_ocr()
-                            task = process_page_ocr.delay(str(page.id))
+                            process_page_ocr.delay(str(page.id))
                             ocr_started += 1
                         except ValueError as e:
                             messages.warning(request, f"Could not start OCR for {page}: {e}")

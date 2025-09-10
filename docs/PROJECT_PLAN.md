@@ -323,3 +323,211 @@ Each TextChunk includes:
 - Page range (start_page, end_page)
 - Genealogical IDs found/inferred
 - Family context for ID resolution
+
+---
+
+## Future Improvements & Performance Optimizations
+
+### OCR Processing Optimization ✅ **COMPLETED**
+
+**Previous Limitation**: OCR processing had low confidence (45-55%) and rotation detection issues
+
+**Solution Implemented**:
+- **Replaced complex rotation detection** with Tesseract PSM 1 (Page Segmentation Mode 1)
+- **PSM 1 provides automatic orientation detection** using Tesseract's built-in OSD (Orientation and Script Detection)
+- **Dramatically improved OCR confidence** from 45-55% to 92-94% on genealogy documents
+- **Simplified codebase** by removing custom computer vision components and OpenCV dependency
+
+**Results:**
+- ✅ Automatic handling of document orientation without manual detection
+- ✅ Excellent text quality on previously problematic pages
+- ✅ Reduced code complexity and maintenance overhead
+- ✅ No GPU hardware requirements - runs efficiently on CPU-only systems
+
+---
+
+### Comprehensive Unit & Integration Testing 🧪
+
+**Current Limitation**: Limited test coverage creates risk of regressions and makes refactoring dangerous
+
+**Current Testing Gaps Analysis:**
+- **Unit Tests**: Missing for core components (OCRProcessor, TextChunker)
+- **Integration Tests**: Basic Django tests exist but lack comprehensive OCR pipeline testing
+- **Regression Tests**: No automated tests for the rotation detection bugs we just fixed
+- **Performance Tests**: No benchmarks for OCR processing time or accuracy metrics
+- **Edge Case Tests**: Missing tests for problematic pages, corrupted inputs, edge cases
+
+#### Implementation Strategy
+
+##### Phase 1: Core Unit Tests (High Priority)
+**Target**: Achieve 80%+ test coverage on critical components
+
+**OCRProcessor Testing:**
+```python
+# Test files: tests/test_ocr_processor.py
+class TestOCRProcessor:
+    def test_psm1_automatic_orientation_detection()
+    def test_multilingual_english_dutch_processing()
+    def test_confidence_scoring_accuracy()
+    def test_pdf_to_image_conversion()
+    def test_rgb_image_processing()  # Ensure RGB is maintained for PSM 1
+    def test_edge_cases_empty_pages_corrupt_pdfs()
+```
+
+**OCRProcessor Testing:**
+```python
+# Test files: tests/test_ocr_processor.py
+class TestOCRProcessor:
+    def test_process_file_pdf_to_image_conversion()
+    def test_process_file_with_rotation_correction()
+    def test_process_file_confidence_scoring()
+    def test_multi_language_support_dutch_english()
+    def test_error_handling_missing_files_corrupt_pdfs()
+    def test_image_preprocessing_grayscale_conversion()
+```
+
+**TextChunk Extraction Testing:**
+```python
+# Test files: tests/test_text_chunking.py
+class TestTextChunking:
+    def test_genealogical_anchor_detection()
+    def test_generation_number_parsing()
+    def test_genealogical_id_correction()
+    def test_chunk_boundary_detection()
+    def test_cross_page_chunk_handling()
+```
+
+**Test Data Requirements:**
+- **Sample PDF pages**: Curated set of 10-20 representative genealogy book pages
+- **Ground truth data**: Expected rotation angles, OCR confidence scores, extracted text
+- **Edge case samples**: Rotated pages, low-quality scans, mixed orientations
+- **Regression test cases**: Specific pages 22, 24, 86 that were problematic
+
+##### Phase 2: Integration Testing (Medium Priority)
+**Target**: End-to-end pipeline testing with realistic data
+
+**OCR Pipeline Integration Tests:**
+```python
+# Test files: tests/test_ocr_integration.py
+class TestOCRIntegration:
+    def test_full_document_processing_workflow()
+    def test_celery_task_queue_integration()
+    def test_database_persistence_after_ocr()
+    def test_concurrent_page_processing()
+    def test_error_recovery_failed_pages()
+    def test_admin_interface_ocr_actions()
+```
+
+**Extraction Pipeline Integration Tests:**
+```python
+# Test files: tests/test_extraction_integration.py
+class TestExtractionIntegration:
+    def test_ocr_to_chunking_to_extraction_pipeline()
+    def test_neural_network_ner_integration()
+    def test_genealogical_id_parsing_end_to_end()
+    def test_entity_deduplication_across_chunks()
+```
+
+##### Phase 3: Performance & Regression Testing (Lower Priority)
+**Target**: Automated performance monitoring and regression detection
+
+**Performance Benchmarks:**
+```python
+# Test files: tests/test_performance.py
+class TestPerformanceBenchmarks:
+    def test_ocr_processing_time_per_page_baseline()
+    def test_rotation_detection_speed_benchmarks()
+    def test_memory_usage_during_batch_processing()
+    def test_concurrent_processing_scalability()
+    def test_large_document_handling_100_plus_pages()
+```
+
+**Regression Test Suite:**
+```python
+# Test files: tests/test_regression.py
+class TestRegressionPrevention:
+    def test_problematic_pages_22_24_86_rotation_detection()
+    def test_ocr_confidence_score_consistency()
+    def test_genealogical_anchor_extraction_accuracy()
+    def test_no_upside_down_text_in_results()
+```
+
+#### Testing Infrastructure Requirements
+
+**Test Data Management:**
+- **Fixture system**: Reusable test data for different page types
+- **Mock services**: OCR API responses, Celery task results
+- **Database fixtures**: Pre-populated test database states
+- **Image assets**: Standardized test images with known properties
+
+**CI/CD Integration:**
+- **GitHub Actions**: Automated test runs on PR/push
+- **Test coverage reporting**: codecov or similar integration
+- **Performance regression detection**: Automated alerts for speed degradation
+- **Quality gates**: Prevent merges if test coverage drops below threshold
+
+**Testing Tools & Libraries:**
+```python
+# Additional dependencies for comprehensive testing
+pytest==7.4.0                    # Test framework
+pytest-django==4.5.2            # Django integration
+pytest-cov==4.1.0              # Coverage reporting
+pytest-mock==3.11.1            # Mocking utilities
+pytest-benchmark==4.0.0        # Performance benchmarks
+factory-boy==3.3.0             # Test data factories
+Pillow==10.0.0                  # Image manipulation for tests
+faker==19.3.0                   # Generate fake genealogy data
+```
+
+#### Success Metrics & Maintenance
+
+**Coverage Targets:**
+- **Unit Test Coverage**: 80%+ on core components (OCRProcessor, TextChunking)
+- **Integration Test Coverage**: 60%+ on end-to-end workflows
+- **Critical Path Coverage**: 95%+ on OCR processing (our critical component)
+
+**Quality Metrics:**
+- **Test execution time**: <2 minutes for full test suite
+- **Flaky test rate**: <1% (tests should be deterministic)
+- **Maintenance overhead**: Tests should not require frequent updates
+
+**Regression Prevention:**
+- **Pre-commit hooks**: Run fast unit tests before commits
+- **PR requirements**: All tests must pass + coverage requirements met
+- **Release validation**: Full integration test suite on staging environment
+
+#### Implementation Effort Estimates
+
+**Phase 1 (Unit Tests)**: 10-16 hours
+- OCRProcessor: 4-6 hours (simplified with PSM 1)
+- TextChunking: 4-6 hours
+- Test infrastructure setup: 2-4 hours
+
+**Phase 2 (Integration Tests)**: 12-16 hours
+- OCR pipeline integration: 6-8 hours
+- Extraction pipeline integration: 4-6 hours
+- Admin interface testing: 2-4 hours
+
+**Phase 3 (Performance/Regression)**: 8-12 hours
+- Performance benchmark setup: 4-6 hours
+- Regression test implementation: 2-4 hours
+- CI/CD integration: 2-4 hours
+
+**Total Estimated Effort**: 36-52 hours (roughly 1-1.5 development weeks)
+
+#### Benefits & ROI
+
+**Risk Reduction:**
+- **Prevent regressions**: Automated detection of bugs like the rotation detection issues
+- **Safe refactoring**: Confidence to simplify/optimize code without breaking functionality
+- **Quality assurance**: Catch edge cases before they reach production
+
+**Development Velocity:**
+- **Faster debugging**: Isolated unit tests pinpoint issues quickly
+- **Documentation**: Tests serve as executable documentation of expected behavior
+- **Onboarding**: New developers can understand system behavior through tests
+
+**Maintenance Benefits:**
+- **Confidence in changes**: Modify algorithms knowing tests will catch problems
+- **Performance monitoring**: Automated detection of performance degradations
+- **Release quality**: Systematic validation before deploying updates

@@ -292,7 +292,8 @@ class GenealogyChunker:
                         "places": [],
                         "person_names": [],
                         "family_groups": [],
-                        "extraction_method": "regex",  # Headers don't use neural network extraction
+                        "extraction_method": "regex",  # Headers don't use neural
+                        # network extraction
                     }
                 )
 
@@ -376,7 +377,8 @@ class GenealogyChunker:
 
     def _extract_family_context(self, line: str, current_generation: int) -> str | None:
         """Extract family context from family group headers"""
-        # Pattern for family group headers: "X.9. Children of..." or "X.9. Kinderen van..."
+        # Pattern for family group headers: "X.9. Children of..." or
+        # "X.9. Kinderen van..."
         family_pattern = r"\b([IVXLCDMilvxlcdm]+|[A-Z]+)\.(\d+)\.\s+(?:Children\s+of|Kinderen\s+van)"
         match = re.search(family_pattern, line, re.IGNORECASE)
 
@@ -412,7 +414,8 @@ class GenealogyChunker:
                 # Extract genealogical IDs from NER results
                 for genealogy_id in entities.get("GENEALOGY_ID", []):
                     if genealogy_id["confidence"] > 0.3:  # Lowered confidence threshold
-                        # Parse and normalize neural network output using correction logic
+                        # Parse and normalize neural network output using
+                        # correction logic
                         raw_text = genealogy_id["text"].strip("():.,!? \t\n")
 
                         # Try to extract components using regex pattern
@@ -468,7 +471,7 @@ class GenealogyChunker:
                 # If we got results from NER, use them preferentially
                 if corrected_ids:
                     extraction_method = "neural_network"
-                    logger.debug(f"NER extracted {len(corrected_ids)} genealogy IDs from text chunk")
+                    logger.debug(f"NER extracted {len(corrected_ids)} genealogy IDs " f"from text chunk")
                     # Still add inferred IDs from family context
                     if current_family_context:
                         individual_pattern = r"\b([a-z])\.\s+([A-Z][a-zA-Z\s]+)"
@@ -583,7 +586,8 @@ class GenealogyChunker:
 
                 logger.debug(
                     f"Extracted data - Dates: {len(result['dates'])}, "
-                    f"Places: {len(result['places'])}, Names: {len(result['person_names'])}"
+                    f"Places: {len(result['places'])}, "
+                    f"Names: {len(result['person_names'])}"
                 )
 
             except Exception as e:

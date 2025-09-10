@@ -94,7 +94,7 @@ class AdminBatchUploadTests(TestCase):
         file2 = SimpleUploadedFile("doc2.jpg", b"content2", content_type="image/jpeg")
 
         url = reverse("admin:genealogy_document_batch_upload")
-        response = self.client.post(
+        self.client.post(
             url,
             {
                 "files": [file1, file2],
@@ -118,7 +118,7 @@ class AdminBatchUploadTests(TestCase):
         invalid_file = SimpleUploadedFile("doc.txt", b"content", content_type="text/plain")
 
         url = reverse("admin:genealogy_document_batch_upload")
-        response = self.client.post(
+        self.client.post(
             url,
             {
                 "files": [valid_file, invalid_file],
@@ -134,7 +134,7 @@ class AdminBatchUploadTests(TestCase):
     def test_batch_upload_no_files(self):
         """Should show error when no files selected"""
         url = reverse("admin:genealogy_document_batch_upload")
-        response = self.client.post(
+        self.client.post(
             url,
             {
                 "language": "eng",
@@ -184,7 +184,7 @@ class AdminBatchUploadTests(TestCase):
         file2 = SimpleUploadedFile("page2.pdf", b"content2", content_type="application/pdf")
 
         url = reverse("admin:genealogy_document_batch_upload")
-        response = self.client.post(
+        self.client.post(
             url,
             {
                 "files": [file1, file2],

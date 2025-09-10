@@ -388,7 +388,7 @@ class TextChunk(models.Model):
         models.CharField(max_length=20),
         default=list,
         blank=True,
-        help_text="Corrected genealogical IDs found in this chunk (Enter comma-separated values: II.1.a, II.1.b)",
+        help_text="Corrected genealogical IDs found in this chunk " "(Enter comma-separated values: II.1.a, II.1.b)",
     )
 
     # Additional extracted entities for gold standard curation
@@ -396,25 +396,26 @@ class TextChunk(models.Model):
         models.CharField(max_length=100),
         default=list,
         blank=True,
-        help_text="Person names found in this chunk (Enter comma-separated values: Johan van der Berg, Maria Janssen)",
+        help_text="Person names found in this chunk "
+        "(Enter comma-separated values: Johan van der Berg, Maria Janssen)",
     )
     dates = CommaSeparatedArrayField(
         models.CharField(max_length=50),
         default=list,
         blank=True,
-        help_text="Dates found in this chunk (Enter comma-separated ISO dates: 1654-03-15, 1658-12-22)",
+        help_text="Dates found in this chunk " "(Enter comma-separated ISO dates: 1654-03-15, 1658-12-22)",
     )
     places = CommaSeparatedArrayField(
         models.CharField(max_length=100),
         default=list,
         blank=True,
-        help_text="Places found in this chunk (Enter comma-separated values: Amsterdam, Utrecht, Haarlem)",
+        help_text="Places found in this chunk " "(Enter comma-separated values: Amsterdam, Utrecht, Haarlem)",
     )
     family_groups = CommaSeparatedArrayField(
         models.CharField(max_length=100),
         default=list,
         blank=True,
-        help_text="Family group headers found in this chunk (Enter comma-separated values: II.9. Children of...)",
+        help_text="Family group headers found in this chunk " "(Enter comma-separated values: II.9. Children of...)",
     )
 
     # Processing status

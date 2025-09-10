@@ -10,7 +10,6 @@ torch==2.8.0
 transformers==4.55.4
 scikit-learn==1.7.1
 datasets==4.0.0
-opencv-python==4.10.0.84
 
 # Development dependencies
 ruff==0.8.4

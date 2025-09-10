@@ -101,7 +101,7 @@ class Command(BaseCommand):
 
             # For demo, treat each PDF as a single page
             # In reality, the admin interface would handle multi-page PDFs
-            page = DocumentPage.objects.create(
+            DocumentPage.objects.create(
                 document=document,
                 page_number=1,
                 image_file=django_file,

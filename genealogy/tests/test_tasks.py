@@ -134,7 +134,7 @@ class OCRTaskTests(TestCase):
         """process_document_ocr should start tasks for all unprocessed pages"""
         # Add another unprocessed page
         test_file2 = SimpleUploadedFile("test2.pdf", b"fake pdf content", content_type="application/pdf")
-        page2 = DocumentPage.objects.create(
+        DocumentPage.objects.create(
             document=self.document,
             page_number=2,
             image_file=test_file2,

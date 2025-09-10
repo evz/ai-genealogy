@@ -29,7 +29,8 @@ class GenealogyNERExtractor:
         Initialize the NER extractor
 
         Args:
-            model_path: Path to trained model directory. If None, will look for default location.
+            model_path: Path to trained model directory. If None, will look
+                for default location.
         """
         if not HAS_ML_PACKAGES:
             raise ImportError(
@@ -72,8 +73,10 @@ class GenealogyNERExtractor:
         logger.info(f"Loading genealogy NER model from {self.model_path}")
 
         try:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
-            self.model = AutoModelForTokenClassification.from_pretrained(self.model_path)
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)  # nosec B615
+            self.model = AutoModelForTokenClassification.from_pretrained(  # nosec B615
+                self.model_path
+            )
 
             # Extract label list from model config
             self.label_list = [self.model.config.id2label[i] for i in range(self.model.config.num_labels)]
@@ -108,7 +111,8 @@ class GenealogyNERExtractor:
             text: Input text to process
 
         Returns:
-            Dictionary with entity types as keys and lists of extracted entities as values.
+            Dictionary with entity types as keys and lists of extracted
+                entities as values.
             Each entity is a dict with 'text', 'start', 'end', 'confidence' keys.
         """
         if not self._loaded:

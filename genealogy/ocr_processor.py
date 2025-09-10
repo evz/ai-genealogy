@@ -4,13 +4,11 @@ import pytesseract
 from pdf2image import convert_from_bytes
 from PIL import Image, ImageEnhance
 
-from .rotation_detector import RotationDetector
-
 logger = logging.getLogger(__name__)
 
 
 class OCRProcessor:
-    """OCR processing with rotation correction and multi-language support"""
+    """OCR processing with automatic orientation detection and multi-language support"""
 
     def __init__(self, language: str = "eng+nld"):
         """
@@ -20,11 +18,10 @@ class OCRProcessor:
             language: Tesseract language string ('eng', 'nld', 'eng+nld')
         """
         self.language = language
-        self.rotation_detector = RotationDetector()
 
-        # Tesseract configuration for better accuracy
-        # Use simpler config without character whitelist to avoid shell quoting issues
-        self.tesseract_config = "--oem 3 --psm 3"
+        # Tesseract configuration with PSM 1 (automatic page segmentation with OSD)
+        # PSM 1 automatically handles rotation detection and provides better results
+        self.tesseract_config = "--oem 3 --psm 1"
 
     def process_file(self, file_path: str) -> tuple[str, float, float]:
         """
@@ -35,25 +32,15 @@ class OCRProcessor:
 
         Returns:
             Tuple of (extracted_text, confidence_score, rotation_applied)
+            Note: rotation_applied is always 0 since PSM 1 handles rotation internally
         """
         try:
             # Determine file type and load image
             image = self._pdf_to_image(file_path) if file_path.lower().endswith(".pdf") else Image.open(file_path)
 
-            # Convert to grayscale for better OCR
-            if image.mode != "L":
-                image = image.convert("L")
-
-            # Detect and correct rotation using new method
-            rotation_applied, confidence = self.rotation_detector.detect_rotation(image)
-            if abs(rotation_applied) > 0.5:  # Only rotate if angle is significant
-                image = image.rotate(-rotation_applied, expand=True)
-                logger.info(f"Applied rotation correction: {rotation_applied:.2f}° (confidence: {confidence:.2f})")
-
-            # Enhance image for better OCR
-            image = self._enhance_image(image)
-
-            # Perform OCR
+            # Perform OCR with PSM 1 (automatic page segmentation +
+            # orientation detection)
+            # PSM 1 automatically handles rotation, no manual rotation detection needed
             text = pytesseract.image_to_string(
                 image,
                 lang=self.language,
@@ -63,7 +50,8 @@ class OCRProcessor:
             # Get confidence score
             confidence = self._get_confidence_score(image)
 
-            return text.strip(), confidence, rotation_applied
+            # Return 0 for rotation_applied since PSM 1 handles it internally
+            return text.strip(), confidence, 0.0
 
         except Exception as e:
             logger.exception(f"OCR processing failed for {file_path}: {e}")

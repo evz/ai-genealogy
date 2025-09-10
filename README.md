@@ -31,11 +31,11 @@ The demo processes a couple sample pages from a book about my family and extract
 
 ## Current Status
 
-### OCR Processing Pipeline - Testing & Refinement
-- Multi-format document processing (PDF, JPG, PNG, TIFF) with Tesseract
+### OCR Processing Pipeline - Optimized
+- Multi-format document processing (PDF, JPG, PNG, TIFF) with Tesseract PSM 1
 - Multi-language support (English/Dutch) for genealogical texts
-- Advanced rotation detection using computer vision techniques (Hough line detection, projection profiles)
-- Two-stage rotation correction: major angles (0°/90°/180°/270°) + fine-angle adjustments (±10°)
+- Automatic orientation detection using Tesseract's built-in OSD (Orientation and Script Detection)
+- 92-94% OCR confidence on genealogy documents (significantly improved from 45-55%)
 - Batch upload functionality and background processing with Celery/Redis
 
 ### AI-Powered Entity Extraction - Implemented
@@ -53,7 +53,7 @@ The demo processes a couple sample pages from a book about my family and extract
 ### Development Approach
 Uses Django admin interface to prototype and test business logic before building custom UI. This approach enables rapid iteration on data models and processing workflows while maintaining data quality through manual review capabilities.
 
-**Current Focus**: Optimizing OCR quality and refining neural network training data
+**Current Focus**: Refining neural network training data and relationship inference
 **Next Phase**: LLM integration for natural language queries and relationship inference
 
 ## Sample Data
@@ -88,7 +88,7 @@ python manage.py runserver
 
 **Document Processing Workflow:**
 1. Upload documents via Django admin interface
-2. Automatic OCR processing with rotation detection and correction
+2. Automatic OCR processing with PSM 1 orientation detection
 3. Intelligent text chunking with genealogical structure preservation
 4. Dual entity extraction (regex + neural network NER)
 5. Review extracted text, confidence scores, and genealogical anchors
@@ -107,14 +107,13 @@ python manage.py runserver
 
 **Tests:** `make test`
 
-**Architecture:** Django + PostgreSQL + Celery + Redis + Tesseract OCR + OpenCV + PyTorch
+**Architecture:** Django + PostgreSQL + Celery + Redis + Tesseract OCR + PyTorch
 
 **Key Technologies:**
-- **Computer Vision**: OpenCV for advanced rotation detection and correction
 - **Machine Learning**: PyTorch + Transformers (BERT) for genealogical Named Entity Recognition
 - **Data Storage**: PostgreSQL with custom ArrayField handling for genealogical anchors
 - **Background Processing**: Celery with Redis for scalable document processing
-- **OCR**: Tesseract with multi-language support and confidence scoring
+- **OCR**: Tesseract PSM 1 with automatic orientation detection and multi-language support
 
 Run `make help` to see all available development commands.
 

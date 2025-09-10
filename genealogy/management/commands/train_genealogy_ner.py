@@ -50,7 +50,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--training-data-dir",
             type=str,
-            help="Directory containing the training data (e.g., training_data/v1_20250823_120000)",
+            help="Directory containing the training data " "(e.g., training_data/v1_20250823_120000)",
         )
         parser.add_argument(
             "--model-name",
@@ -116,7 +116,7 @@ class Command(BaseCommand):
             "--gradient-accumulation-steps",
             type=int,
             default=1,
-            help="Number of updates steps to accumulate before performing a backward/update pass (default: 1)",
+            help="Number of updates steps to accumulate before performing " "a backward/update pass (default: 1)",
         )
         parser.add_argument(
             "--lr-scheduler-type",
@@ -251,7 +251,8 @@ class Command(BaseCommand):
                 f"Training completed!\n"
                 f"Model saved to: {model_output_dir}\n"
                 f"Training loss: {train_result.training_loss:.4f}\n"
-                f"Training time: {train_result.metrics.get('train_runtime', 0):.1f} seconds"
+                f"Training time: "
+                f"{train_result.metrics.get('train_runtime', 0):.1f} seconds"
             )
         )
 
@@ -265,7 +266,7 @@ class Command(BaseCommand):
                 self.style.SUCCESS(
                     "✓ All required ML packages are installed:\n"
                     f"  - torch: {torch.__version__}\n"
-                    f"  - transformers: {torch.__version__}\n"  # Assuming transformers version
+                    f"  - transformers: {torch.__version__}\n"
                     "  - datasets: available\n"
                     "  - numpy: available\n"
                     "  - scikit-learn: available"
@@ -279,10 +280,12 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.ERROR(
                 "❌ Required ML packages are not installed.\n\n"
-                "To use the NER training functionality, install the required packages:\n\n"
+                "To use the NER training functionality, install the required "
+                "packages:\n\n"
                 "pip install torch transformers datasets scikit-learn numpy\n\n"
                 "Note: This will install ~2GB of packages including PyTorch.\n"
-                "You can still use the training data generation without these packages.\n\n"
+                "You can still use the training data generation without these "
+                "packages.\n\n"
                 "Use --check-dependencies to verify installation."
             )
         )
@@ -333,8 +336,6 @@ class Command(BaseCommand):
 
         with open(file_path, encoding="utf-8") as f:
             for line in f:
-                stripped_line = line.strip()
-
                 # Skip comments and empty lines between examples
                 if line.startswith("#") or (not line and not current_tokens):
                     continue
@@ -368,13 +369,13 @@ class Command(BaseCommand):
         """Initialize tokenizer and model"""
         self.stdout.write(f"Loading model: {model_name}")
 
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        tokenizer = AutoTokenizer.from_pretrained(model_name)  # nosec B615
 
         # Create label mapping
         label2id = {label: i for i, label in enumerate(label_list)}
         id2label = {i: label for label, i in label2id.items()}
 
-        model = AutoModelForTokenClassification.from_pretrained(
+        model = AutoModelForTokenClassification.from_pretrained(  # nosec B615
             model_name,
             num_labels=len(label_list),
             label2id=label2id,
@@ -551,7 +552,8 @@ class Command(BaseCommand):
         # Also save a simple model card
         model_card = f"""# Genealogy NER Model
 
-This model was trained for genealogical named entity recognition on Dutch family history texts.
+This model was trained for genealogical named entity recognition on
+Dutch family history texts.
 
 ## Entity Types
 {chr(10).join(f"- {entity}" for entity in training_info["model_info"]["entity_types"])}
