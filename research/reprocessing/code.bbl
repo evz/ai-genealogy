@@ -1,0 +1,151 @@
+\begin{thebibliography}{24}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Alex and Burns(2014)]{alex}
+B.~Alex and J.~Burns.
+\newblock Estimating and rating the quality of optically character recognised
+  text.
+\newblock \emph{ACM International Conference Proceeding Series}, 2014.
+
+\bibitem[Blando et~al.(1995)Blando, Kanai, and Nartker]{blando}
+L.R. Blando, J.~Kanai, and T.A. Nartker.
+\newblock Prediction of ocr accuracy using simple image features.
+\newblock page 319, 1995.
+
+\bibitem[Cavnar and Trenkle(1994)]{cavnar}
+W.B. Cavnar and J.M. Trenkle.
+\newblock N-gram-based text categorization.
+\newblock \emph{Ann Arbor MI}, 1994.
+
+\bibitem[Cohen(1960)]{kappa}
+J.~Cohen.
+\newblock A coefficient of agreement for nominal scales.
+\newblock \emph{Educational and Psychological Measurement}, 20:\penalty0
+  37--46, 1960.
+
+\bibitem[Doermann and Tombre(2014)]{doermann}
+D.~Doermann and K.~Tombre.
+\newblock \emph{Handbook of Document Image Processing and Recognition}.
+\newblock Springer Publishing Company, Incorporated, 2014.
+
+\bibitem[Gupta et~al.(2015)Gupta, Gutierrez-Osuna, Christy, Capitanu, Auvil,
+  Grumbach, Furuta, and Mandell]{gupta}
+A.~Gupta, R.~Gutierrez-Osuna, M.~Christy, B.~Capitanu, L.~Auvil, L.~Grumbach,
+  R.~Furuta, and L.~Mandell.
+\newblock Automatic assessment of ocr quality in historical documents.
+\newblock page 1735–1741, 2015.
+
+\bibitem[Hill and Hengchen(2019)]{hill}
+M.~Hill and S.~Hengchen.
+\newblock Quantifying the impact of dirty ocr on historical text analysis:
+  Eighteenth century collections online as a case study.
+\newblock \emph{Digit. Scholarsh. Humanit.}, 34:\penalty0 825--843, 2019.
+
+\bibitem[Kay(2007)]{kay}
+A.~Kay.
+\newblock Tesseract: an open-source optical character recognition engine.
+\newblock \emph{Linux Journal}, 2007.
+
+\bibitem[Kieu et~al.(2016)Kieu, Cloppet, and Vincent]{kieu}
+V.~Kieu, F.~Cloppet, and N.~Vincent.
+\newblock Ocr accuracy prediction method based on blur estimation.
+\newblock pages 317--322, 2016.
+\newblock \doi{10.1109/DAS.2016.50}.
+
+\bibitem[Kulp and April(2007)]{kulp}
+S.~Kulp and K.~April.
+\newblock On retrieving legal files: Shortening documents and weeding out
+  garbage.
+\newblock Special Publication 500-274, 2007.
+
+\bibitem[Levenshtein(1965)]{levenshtein}
+V.~Levenshtein.
+\newblock Binary codes capable of correcting spurious insertions and deletions
+  of ones.
+\newblock \emph{Problems of Information Transmission}, 1:\penalty0 8--17, 1965.
+
+\bibitem[Lu et~al.(2020)Lu, Ilic, and Dooms]{lu}
+T.~Lu, D.~Ilic, and A.~Dooms.
+\newblock Noise characterization for historical documents with physical
+  distortions.
+\newblock 11353:\penalty0 77--87, 2020.
+\newblock \doi{10.1117/12.2559694}.
+
+\bibitem[Lui and Baldwin(2012)]{lui}
+M.~Lui and T.~Baldwin.
+\newblock Langid.py: An off-the-shelf language identification tool.
+\newblock pages 25--30, 2012.
+
+\bibitem[Maurer(2017)]{maurer}
+Y.~Maurer.
+\newblock Improving the quality of the text, a pilot project to assess and
+  correct the ocr in a multilingual environment.
+\newblock \emph{Relying on News Media. Long Term Preservation and Perspectives
+  for Our Collective Memorey}, 2017.
+
+\bibitem[Peng et~al.(2015)Peng, Cao, and Natarajan]{peng}
+X.~Peng, H.~Cao, and P.~Natarajan.
+\newblock Document image ocr accuracy prediction via latent dirichlet
+  allocation.
+\newblock pages 771--775, 2015.
+
+\bibitem[Salah et~al.(2015)Salah, Moreux, Ragot, and Paquet]{salah}
+A.B. Salah, J.P. Moreux, N.~Ragot, and T.~Paquet.
+\newblock Ocr performance prediction using cross-ocr alignment.
+\newblock pages 556--560, 2015.
+\newblock \doi{10.1109/ICDAR.2015.7333823}.
+
+\bibitem[Schaefer and Neudecker(2020)]{neudecker}
+R.~Schaefer and C.~Neudecker.
+\newblock A two-step approach for automatic {OCR} post-correction.
+\newblock pages 52--57, 2020.
+
+\bibitem[Singh et~al.(2018)Singh, Vats, and Hast]{singh}
+P.~Singh, E.~Vats, and A.~Hast.
+\newblock Learning surrogate models of document image quality metrics for
+  automated document image processing.
+\newblock pages 67--72, 2018.
+\newblock \doi{10.1109/DAS.2018.14}.
+
+\bibitem[Springmann et~al.(2016)Springmann, Fink, and Schulz]{springmann}
+U.~Springmann, F.~Fink, and K.U. Schulz.
+\newblock Automatic quality evaluation and (semi-) automatic improvement of ocr
+  models for historical printings.
+\newblock \emph{arXiv: Digital Libraries}, 2016.
+
+\bibitem[Strien et~al.(2020)Strien, Beelen, Coll~Ardanuy, Hosseini,
+  Mcgillivray, and Colavizza]{strien}
+D.~Strien, K.~Beelen, M.~Coll~Ardanuy, K.~Hosseini, B.~Mcgillivray, and
+  G.~Colavizza.
+\newblock Assessing the impact of ocr quality on downstream nlp tasks.
+\newblock 2020.
+
+\bibitem[Taghva et~al.(2001)Taghva, Nartker, Condit, and Borsack]{taghva}
+K.~Taghva, T.~Nartker, A.~Condit, and J.~Borsack.
+\newblock Automatic removal of garbage strings in ocr text: An implementation.
+\newblock \emph{The 5th World Multi-Conference on Systemics, Cybernetics and
+  Informatics}, 2001.
+
+\bibitem[Willmott and Matsuura(2005)]{willmott}
+C.J. Willmott and K.~Matsuura.
+\newblock Advantages of the mean absolute error (mae) over the root mean square
+  error (rmse) in assessing average model performance.
+\newblock \emph{Climate Research}, 30\penalty0 (1):\penalty0 79--82, 2005.
+
+\bibitem[Wudtke et~al.(2011)Wudtke, Ringlstetter, and Schulz]{wudtke}
+R.~Wudtke, C.~Ringlstetter, and K.~Schulz.
+\newblock Recognizing garbage in ocr output on historical documents.
+\newblock \emph{Proceedings of the 2011 Joint Workshop on Multilingual OCR and
+  Analytics for Noisy Unstructured Text Data}, 2011.
+\newblock \doi{10.1145/2034617.2034626}.
+
+\bibitem[Zipf(1949)]{zipf}
+G.K. Zipf.
+\newblock \emph{Human Behaviour and the Principle of Least Effort}.
+\newblock Addison-Wesley, 1949.
+
+\end{thebibliography}

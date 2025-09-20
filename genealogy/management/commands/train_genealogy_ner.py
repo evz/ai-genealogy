@@ -19,7 +19,6 @@ from django.core.management.base import BaseCommand, CommandError
 try:
     import numpy as np
     import torch
-    from datasets import Dataset
     from sklearn.metrics import f1_score
     from transformers import (
         AutoModelForTokenClassification,
@@ -29,6 +28,8 @@ try:
         Trainer,
         TrainingArguments,
     )
+
+    from datasets import Dataset
 
     HAS_ML_PACKAGES = True
 except ImportError as e:
@@ -85,8 +86,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--max-length",
             type=int,
-            default=1024,
-            help="Maximum sequence length (default: 1024)",
+            default=512,
+            help="Maximum sequence length (default: 512)",
         )
         parser.add_argument(
             "--eval-steps",
@@ -336,6 +337,7 @@ class Command(BaseCommand):
 
         with open(file_path, encoding="utf-8") as f:
             for line in f:
+                line = line.strip()
                 # Skip comments and empty lines between examples
                 if line.startswith("#") or (not line and not current_tokens):
                     continue

@@ -40,6 +40,9 @@ exclude = [
     "node_modules",
     "venv",
     "migrations",  # Exclude Django migrations
+    "research",  # Exclude research/experimental files
+    "generate_genealogy_negative_examples.py",  # Experimental script
+    "docstructbench_with_overlap_resolution.py",  # Experimental script
 ]
 
 [tool.ruff.lint]
@@ -168,3 +171,7 @@ disallow_untyped_defs = false
 
 [tool.django-stubs]
 django_settings_module = "genealogy_extractor.settings"
+
+[tool.bandit]
+# Exclude training tools from security scanning (uses random for data generation)
+exclude_dirs = ["genealogy/training_tools"]

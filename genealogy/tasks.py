@@ -4,12 +4,18 @@ import re
 
 from django.core.exceptions import ValidationError
 
-from celery import shared_task
+import spacy
+from celery import chain, shared_task
+from pdf2image import convert_from_path
+from PIL import Image
 
 from .date_standardizer import standardize_dates
+from .document_layout_detector import DocumentLayoutDetector
 from .models import Document, DocumentPage, TextChunk
 from .ner_extractor import get_default_ner_extractor
-from .ocr_processor import OCRProcessor
+from .patterns import GenealogyPatterns
+from .region_ocr_processor import RegionOCRProcessor
+from .rotation_detector import RotationDetector
 
 logger = logging.getLogger(__name__)
 
@@ -43,16 +49,38 @@ def process_page_ocr(self, page_id: str):  # noqa: ARG001
         # Get language from document
         language = page.document.languages
 
-        # Initialize OCR processor
-        processor = OCRProcessor(language=language)
+        # Initialize modular OCR components
+        rotation_detector = RotationDetector()
+        layout_detector = DocumentLayoutDetector()
+        ocr_processor = RegionOCRProcessor(tesseract_language=language if language else "eng+nld")
 
         # Process the image file
         file_path = page.image_file.path
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Image file not found: {file_path}")
 
-        # Perform OCR
-        text, confidence, rotation_applied = processor.process_file(file_path)
+        # Load image (handle both PDF and image files)
+        if file_path.lower().endswith(".pdf"):
+            # Convert PDF to image (first page only)
+            images = convert_from_path(file_path, first_page=1, last_page=1)
+            if not images:
+                raise ValueError(f"Could not convert PDF to image: {file_path}")
+            image = images[0]
+        else:
+            # Load image file directly
+            image = Image.open(file_path)
+
+        # Step 1: Detect and correct rotation
+        logger.info(f"Step 1: Rotation detection for page {page}")
+        corrected_image, rotation_applied = rotation_detector.detect_and_correct(image)
+
+        # Step 2: Detect document layout regions
+        logger.info(f"Step 2: Layout detection for page {page}")
+        regions = layout_detector.detect_regions(corrected_image)
+
+        # Step 3: Process regions with OCR
+        logger.info(f"Step 3: OCR processing {len(regions)} regions for page {page}")
+        text, confidence = ocr_processor.process_regions(corrected_image, regions)
 
         # Update the page with results
         page.ocr_text = text
@@ -212,11 +240,26 @@ class GenealogyChunker:
         "HL": "II",
         "W": "VI",
         "WV": "XV",
+        "'V": "IV",
+        "zy": "zv",
     }
+
+    BURIAL_SYMBOL_PATTERNS = [
+        (r", n ([A-Z][a-zA-Z]+)", r", [buried] \1"),
+        (r", o ([A-Z][a-zA-Z]+)", r", [buried] \1"),
+        (r" n ([A-Z][a-zA-Z]+) \d", r" [buried] \1 "),
+        (r" o ([A-Z][a-zA-Z]+) \d", r" [buried] \1 "),
+    ]
+
+    DATE_OCR_PATTERNS = [
+        (r"\.4 (\d{3})", r".1\1"),
+        (r"4 0\.", r"10."),
+    ]
 
     def __init__(self):
         self.current_generation = 1
         # Try to get the neural network extractor
+        # Switched back to NER-first extraction after Phase 3.2 training completion
         self.ner_extractor = get_default_ner_extractor()
         if self.ner_extractor:
             logger.info("Using neural network-based genealogy entity extraction")
@@ -243,14 +286,18 @@ class GenealogyChunker:
         current_end_page = 1
         current_generation = 1
         current_family_context = None  # Track current family group (e.g., "X.9")
+        current_genealogy_entry = None  # Track current genealogy entry for linking narrative chunks
 
-        for line in lines:
+        i = 0
+        while i < len(lines):
+            line = lines[i]
             # Track page numbers
             page_match = re.match(r"=== Page (\d+) ===", line)
             if page_match:
                 current_end_page = int(page_match.group(1))
                 if not current_chunk_lines:
                     current_start_page = current_end_page
+                i += 1
                 continue
 
             # Check for generation headers
@@ -263,44 +310,150 @@ class GenealogyChunker:
                         genealogical_data = self._extract_genealogical_data(
                             chunk_text, current_generation, current_family_context
                         )
-                        chunks.append(
-                            {
-                                "text_content": chunk_text,
-                                "start_page": current_start_page,
-                                "end_page": current_end_page,
-                                "chunk_type": "CONTENT",
-                                "generation_number": current_generation,
-                                "genealogy_ids": genealogical_data["genealogy_ids"],
-                                "dates": genealogical_data["dates"],
-                                "places": genealogical_data["places"],
-                                "person_names": genealogical_data["person_names"],
-                                "family_groups": genealogical_data["family_groups"],
-                                "extraction_method": genealogical_data["extraction_method"],
-                            }
+                        chunk_dict = self._create_chunk_dict(
+                            text_content=chunk_text,
+                            chunk_type="CONTENT",
+                            start_page=current_start_page,
+                            end_page=current_end_page,
+                            generation_number=current_generation,
+                            genealogical_data=genealogical_data,
                         )
+                        chunks.append(chunk_dict)
 
                 # Create header chunk
-                chunks.append(
-                    {
-                        "text_content": line.strip(),
-                        "start_page": current_end_page,
-                        "end_page": current_end_page,
-                        "chunk_type": "HEADER",
-                        "generation_number": generation_num,
-                        "genealogy_ids": [],
-                        "dates": [],
-                        "places": [],
-                        "person_names": [],
-                        "family_groups": [],
-                        "extraction_method": "regex",  # Headers don't use neural
-                        # network extraction
-                    }
+                header_chunk = self._create_chunk_dict(
+                    text_content=line.strip(),
+                    chunk_type="HEADER",
+                    start_page=current_end_page,
+                    end_page=current_end_page,
+                    generation_number=generation_num,
                 )
+                chunks.append(header_chunk)
 
                 # Reset for new chunk
                 current_chunk_lines = []
                 current_start_page = current_end_page
                 current_generation = generation_num
+                i += 1
+                continue
+
+            # Check for family group headers
+            if self._is_family_group_header(line):
+                # Finish current chunk if it has content
+                if current_chunk_lines:
+                    chunk_text = "\n".join(current_chunk_lines).strip()
+                    if chunk_text:
+                        genealogical_data = self._extract_genealogical_data(
+                            chunk_text, current_generation, current_family_context
+                        )
+                        chunk_dict = self._create_chunk_dict(
+                            text_content=chunk_text,
+                            chunk_type="CONTENT",
+                            start_page=current_start_page,
+                            end_page=current_end_page,
+                            generation_number=current_generation,
+                            genealogical_data=genealogical_data,
+                        )
+                        chunks.append(chunk_dict)
+
+                # Create family group header chunk
+                header_chunk = self._create_chunk_dict(
+                    text_content=line.strip(),
+                    chunk_type="HEADER",
+                    start_page=current_end_page,
+                    end_page=current_end_page,
+                    generation_number=current_generation,
+                )
+                chunks.append(header_chunk)
+
+                # Update family context for subsequent individual entries
+                current_family_context = self._extract_family_context(line, current_generation)
+
+                # Reset for new chunk
+                current_chunk_lines = []
+                current_start_page = current_end_page
+                i += 1
+                continue
+
+            # Check for genealogical entries (dense biographical entries)
+            if self._is_genealogy_entry(line):
+                # Finish current chunk if it has content
+                if current_chunk_lines:
+                    chunk_text = "\n".join(current_chunk_lines).strip()
+                    if chunk_text:
+                        genealogical_data = self._extract_genealogical_data(
+                            chunk_text, current_generation, current_family_context
+                        )
+
+                        # Determine chunk type for previous content
+                        chunk_type = "NARRATIVE_CONTEXT" if current_genealogy_entry is not None else "CONTENT"
+
+                        chunk_dict = self._create_chunk_dict(
+                            text_content=chunk_text,
+                            chunk_type=chunk_type,
+                            start_page=current_start_page,
+                            end_page=current_end_page,
+                            generation_number=current_generation,
+                            genealogical_data=genealogical_data,
+                            related_genealogy_entry_index=current_genealogy_entry,
+                        )
+                        chunks.append(chunk_dict)
+
+                # Start new genealogy entry - collect all lines until we hit another entry or generation
+                genealogy_lines = [line]
+
+                # Look ahead to collect multi-line genealogy entry
+                j = i + 1
+                consecutive_narrative_lines = 0
+                while j < len(lines):
+                    next_line = lines[j]
+
+                    # Stop if we hit another genealogy entry, generation header, or page marker
+                    if (
+                        self._is_genealogy_entry(next_line)
+                        or self._extract_generation_number(next_line)
+                        or re.match(r"=== Page (\d+) ===", next_line)
+                    ):
+                        break
+
+                    # Check for narrative content but be more robust
+                    if self._is_narrative_content(next_line):
+                        consecutive_narrative_lines += 1
+                        # Only stop after 2 consecutive narrative lines to avoid false positives
+                        if consecutive_narrative_lines >= 2:
+                            break
+                    else:
+                        consecutive_narrative_lines = 0
+
+                    if next_line.strip():
+                        genealogy_lines.append(next_line)
+                    j += 1
+
+                # Create genealogy entry chunk
+                genealogy_text = "\n".join(genealogy_lines).strip()
+                genealogical_data = self._extract_genealogical_data(
+                    genealogy_text, current_generation, current_family_context
+                )
+
+                genealogy_chunk = self._create_chunk_dict(
+                    text_content=genealogy_text,
+                    chunk_type="GENEALOGY_ENTRY",
+                    start_page=current_start_page,
+                    end_page=current_end_page,
+                    generation_number=current_generation,
+                    genealogical_data=genealogical_data,
+                    related_genealogy_entry_index=None,
+                )
+
+                chunks.append(genealogy_chunk)
+                current_genealogy_entry = len(chunks) - 1  # Index of this genealogy entry
+
+                # Reset for new chunk
+                current_chunk_lines = []
+                current_start_page = current_end_page
+
+                # Skip the lines we already processed
+                i = j
                 continue
 
             # Regular content line
@@ -318,23 +471,25 @@ class GenealogyChunker:
                     genealogical_data = self._extract_genealogical_data(
                         chunk_text, current_generation, current_family_context
                     )
-                    chunks.append(
-                        {
-                            "text_content": chunk_text,
-                            "start_page": current_start_page,
-                            "end_page": current_end_page,
-                            "chunk_type": "CONTENT",
-                            "generation_number": current_generation,
-                            "genealogy_ids": genealogical_data["genealogy_ids"],
-                            "dates": genealogical_data["dates"],
-                            "places": genealogical_data["places"],
-                            "person_names": genealogical_data["person_names"],
-                            "family_groups": genealogical_data["family_groups"],
-                            "extraction_method": genealogical_data["extraction_method"],
-                        }
+
+                    # Determine chunk type based on context
+                    chunk_type = "NARRATIVE_CONTEXT" if current_genealogy_entry is not None else "CONTENT"
+
+                    chunk_dict = self._create_chunk_dict(
+                        text_content=chunk_text,
+                        chunk_type=chunk_type,
+                        start_page=current_start_page,
+                        end_page=current_end_page,
+                        generation_number=current_generation,
+                        genealogical_data=genealogical_data,
+                        related_genealogy_entry_index=current_genealogy_entry,
                     )
+                    chunks.append(chunk_dict)
                     current_chunk_lines = []
                     current_start_page = current_end_page
+
+            # Move to next line
+            i += 1
 
         # Handle final chunk
         if current_chunk_lines:
@@ -343,23 +498,154 @@ class GenealogyChunker:
                 genealogical_data = self._extract_genealogical_data(
                     chunk_text, current_generation, current_family_context
                 )
-                chunks.append(
-                    {
-                        "text_content": chunk_text,
-                        "start_page": current_start_page,
-                        "end_page": current_end_page,
-                        "chunk_type": "CONTENT",
-                        "generation_number": current_generation,
-                        "genealogy_ids": genealogical_data["genealogy_ids"],
-                        "dates": genealogical_data["dates"],
-                        "places": genealogical_data["places"],
-                        "person_names": genealogical_data["person_names"],
-                        "family_groups": genealogical_data["family_groups"],
-                        "extraction_method": genealogical_data["extraction_method"],
-                    }
+
+                # Determine chunk type based on context
+                chunk_type = "NARRATIVE_CONTEXT" if current_genealogy_entry is not None else "CONTENT"
+
+                chunk_dict = self._create_chunk_dict(
+                    text_content=chunk_text,
+                    chunk_type=chunk_type,
+                    start_page=current_start_page,
+                    end_page=current_end_page,
+                    generation_number=current_generation,
+                    genealogical_data=genealogical_data,
+                    related_genealogy_entry_index=current_genealogy_entry,
                 )
+                chunks.append(chunk_dict)
 
         return chunks
+
+    def _create_chunk_dict(
+        self,
+        text_content: str,
+        chunk_type: str,
+        start_page: int,
+        end_page: int,
+        generation_number: int,
+        genealogical_data: dict | None = None,
+        related_genealogy_entry_index: int | None = None,
+    ) -> dict:
+        """Create a standardized chunk dictionary with all required fields"""
+
+        # Use empty genealogical data if not provided
+        if genealogical_data is None:
+            genealogical_data = {
+                "genealogy_ids": [],
+                "dates": [],
+                "places": [],
+                "person_names": [],
+                "family_groups": [],
+                "occupations": [],
+                "source_citations": [],
+                "extraction_method": "regex",
+            }
+
+        return {
+            "text_content": text_content,
+            "start_page": start_page,
+            "end_page": end_page,
+            "chunk_type": chunk_type,
+            "generation_number": generation_number,
+            "genealogy_ids": genealogical_data["genealogy_ids"],
+            "dates": genealogical_data["dates"],
+            "places": genealogical_data["places"],
+            "person_names": genealogical_data["person_names"],
+            "family_groups": genealogical_data["family_groups"],
+            "occupations": genealogical_data["occupations"],
+            "source_citations": genealogical_data["source_citations"],
+            "extraction_method": genealogical_data["extraction_method"],
+            "related_genealogy_entry_index": related_genealogy_entry_index,
+        }
+
+    def _is_genealogy_entry(self, text: str) -> bool:
+        """Detect if text line starts a genealogical entry (e.g., 'n. Bessel van Zanten, * ...')"""
+        import re
+
+        text = text.strip()
+
+        # Standard pattern: letter + name + genealogical markers
+        standard_pattern = r"^[a-z]\.\s+[A-Z][a-zA-Z\s]+.*[*+~,]"
+
+        # Kind entries: "a. Kind, o place date"
+        kind_pattern = r"^[a-z]\.\s+Kind[,\s]"
+
+        # OCR-corrupted pattern: missing letter but has genealogical markers near name
+        # Must have ~ (baptism) or * (birth) within first part of line
+        missing_letter_pattern = r"^\.\s+[A-Z][a-zA-Z\s]+[,\s]*[~*][^,]{0,50}[,.]"
+
+        return bool(
+            re.match(standard_pattern, text) or re.match(kind_pattern, text) or re.match(missing_letter_pattern, text)
+        )
+
+    def _is_narrative_content(self, text: str) -> bool:
+        """Use spaCy NLP to detect if text contains narrative prose vs biographical fragments"""
+        text = text.strip()
+
+        if not text:
+            return False
+
+        # Strong indicators this is biographical data, not narrative
+        biographical_indicators = [
+            r"\*.*\d{4}",
+            r"\+.*\d{4}",
+            r"~.*\d{4}",
+            r"x \d+\.",
+            r"dv ",
+            r"zv ",
+            r"wed ",
+            r"\d{4}[-–]\d{4}:",
+            r"[A-Z][a-z]+(straat|gracht|kade|plein|laan)",
+            r"[a-z]+\s*\(\d{4}\)",
+        ]
+
+        # If text has strong biographical markers, bias against narrative classification
+        bio_marker_count = sum(1 for pattern in biographical_indicators if re.search(pattern, text, re.IGNORECASE))
+
+        if bio_marker_count >= 2:
+            return False
+
+        # Load appropriate spaCy model based on content
+        english_indicators = ["the ", "and ", "of ", "to ", "in ", "a ", "is ", "was ", "he ", "she "]
+        is_likely_english = any(indicator in text.lower() for indicator in english_indicators)
+
+        if is_likely_english:
+            if not hasattr(self, "_nlp_en"):
+                self._nlp_en = spacy.load("en_core_web_sm")
+            nlp = self._nlp_en
+        else:
+            if not hasattr(self, "_nlp_nl"):
+                self._nlp_nl = spacy.load("nl_core_news_sm")
+            nlp = self._nlp_nl
+
+        # Analyze with spaCy
+        doc = nlp(text)
+        sentences = list(doc.sents)
+
+        # Multiple sentences strongly indicate narrative
+        if len(sentences) > 1:
+            return True
+
+        # Single sentence analysis
+        if len(sentences) == 1:
+            sent = sentences[0]
+
+            # Look for complete sentence structure with subject and verb
+            has_subject = any(token.dep_ in ["nsubj", "nsubj:pass"] for token in sent)
+            has_verb = any(token.pos_ == "VERB" for token in sent)
+
+            # Look for narrative linguistic markers
+            has_pronouns = any(token.pos_ == "PRON" for token in sent)
+            has_past_tense = any(token.pos_ == "VERB" and "Past" in str(token.morph) for token in sent)
+
+            # For single biographical markers, be more conservative
+            if bio_marker_count >= 1:
+                return has_subject and has_verb and has_pronouns and has_past_tense
+
+            # Standard narrative detection for non-biographical content
+            if has_subject and has_verb and (has_pronouns or has_past_tense):
+                return True
+
+        return False
 
     def _extract_generation_number(self, line: str) -> int | None:
         """Extract generation number from a line"""
@@ -374,6 +660,22 @@ class GenealogyChunker:
             if dutch_name == line_lower or line_lower == dutch_name.upper():
                 return number
         return None
+
+    def _is_family_group_header(self, line: str) -> bool:
+        """Detect family group headers like 'II.1. Kinderen van...' or '1. Kinderen van...' (OCR corrupted)"""
+        line = line.strip()
+
+        # Standard pattern: Roman numeral + number + "Children of"/"Kinderen van"
+        # II.1. Kinderen van Gerrit van Santen en Lijsbet
+        standard_pattern = r"\b[IVXLCDMilvxlcdm]+\.\d+\.\s+(?:Kinderen\s+van|Children\s+of)"
+
+        # OCR-corrupted pattern: Missing Roman numeral, just number + "Children of"/"Kinderen van"
+        # 1. Kinderen van Gerrit van Santen en Lijsbet (missing "II.")
+        corrupted_pattern = r"^\d+\.\s+(?:Kinderen\s+van|Children\s+of)"
+
+        return bool(
+            re.search(standard_pattern, line, re.IGNORECASE) or re.match(corrupted_pattern, line, re.IGNORECASE)
+        )
 
     def _extract_family_context(self, line: str, current_generation: int) -> str | None:
         """Extract family context from family group headers"""
@@ -398,120 +700,52 @@ class GenealogyChunker:
         current_generation: int,
         current_family_context: str | None = None,
     ) -> tuple[list[str], str]:
-        """Extract and correct genealogical IDs from text, including inferred IDs
+        """Extract and correct genealogical IDs from text using regex patterns only
 
         Returns:
             tuple: (corrected_ids, extraction_method)
         """
         corrected_ids = []
-        extraction_method = "regex"  # Default fallback
+        extraction_method = "regex"
 
-        # Try neural network extraction first
-        if self.ner_extractor:
-            try:
-                entities = self.ner_extractor.extract_entities(text)
+        # Extract explicit genealogical IDs using centralized patterns
+        explicit_matches = GenealogyPatterns.GENEALOGY_ID.findall(text)
 
-                # Extract genealogical IDs from NER results
-                for genealogy_id in entities.get("GENEALOGY_ID", []):
-                    if genealogy_id["confidence"] > 0.3:  # Lowered confidence threshold
-                        # Parse and normalize neural network output using
-                        # correction logic
-                        raw_text = genealogy_id["text"].strip("():.,!? \t\n")
+        for match_tuple in explicit_matches:
+            # Pattern has 3 alternatives with 3 groups each = 9 total groups
+            # Find the non-empty group set (only one alternative will match)
+            roman_part = match_tuple[0] or match_tuple[3] or match_tuple[6]
+            number_part = match_tuple[1] or match_tuple[4] or match_tuple[7]
+            letter_part = match_tuple[2] or match_tuple[5] or match_tuple[8]
 
-                        # Try to extract components using regex pattern
-                        pattern_match = re.search(
-                            r"([IVXLCDMilvxlcdm]+|[A-Z]+)\.(\d+)(?:\.([a-zA-Z]))?",
-                            raw_text,
-                        )
-                        if pattern_match:
-                            roman_part, number_part = (
-                                pattern_match.groups()[0],
-                                pattern_match.groups()[1],
-                            )
-                            letter_part = (
-                                pattern_match.groups()[2]
-                                if len(pattern_match.groups()) > 2 and pattern_match.groups()[2]
-                                else None
-                            )
+            if roman_part and number_part and letter_part:
+                corrected_id = self._correct_genealogy_id(
+                    roman_part,
+                    number_part,
+                    letter_part,
+                    current_generation,
+                )
+                if corrected_id:
+                    corrected_ids.append(corrected_id)
 
-                            if letter_part:
-                                # Use existing correction method for full IDs
-                                corrected_id = self._correct_genealogy_id(
-                                    roman_part,
-                                    number_part,
-                                    letter_part,
-                                    current_generation,
-                                )
-                                if corrected_id:
-                                    corrected_ids.append(corrected_id)
-                            else:
-                                # Handle family group IDs (no letter part)
-                                corrected_roman = self.OCR_CORRECTIONS.get(roman_part, roman_part)
-                                if not self._is_valid_roman(corrected_roman):
-                                    corrected_roman = self._number_to_roman(current_generation)
-                                corrected_ids.append(f"{corrected_roman}.{number_part}")
-                        else:
-                            # If no pattern match, try to use raw text (might be clean)
-                            corrected_ids.append(raw_text)
+        # Extract family group IDs using centralized patterns
+        family_matches = GenealogyPatterns.FAMILY_GROUP.findall(text)
+        for match_tuple in family_matches:
+            # Pattern has 3 alternatives with 2 groups each = 6 total groups
+            roman_part = match_tuple[0] or match_tuple[2] or match_tuple[4]
+            number_part = match_tuple[1] or match_tuple[3] or match_tuple[5]
 
-                # Extract family groups
-                for family_group in entities.get("FAMILY_GROUP", []):
-                    if family_group["confidence"] > 0.3:
-                        # Parse family group header for ID
-                        family_text = family_group["text"]
-                        family_match = re.search(r"([IVX]+)\.(\d+)\.", family_text)
-                        if family_match:
-                            roman_part, number_part = family_match.groups()
-                            corrected_roman = self.OCR_CORRECTIONS.get(roman_part, roman_part)
-                            if not self._is_valid_roman(corrected_roman):
-                                corrected_roman = self._number_to_roman(current_generation)
-                            family_id = f"{corrected_roman}.{number_part}"
-                            corrected_ids.append(family_id)
+            if roman_part and number_part:
+                corrected_roman = self.OCR_CORRECTIONS.get(roman_part, roman_part)
+                if not self._is_valid_roman(corrected_roman):
+                    corrected_roman = self._number_to_roman(current_generation)
+                family_id = f"{corrected_roman}.{number_part}"
+                corrected_ids.append(family_id)
 
-                # If we got results from NER, use them preferentially
-                if corrected_ids:
-                    extraction_method = "neural_network"
-                    logger.debug(f"NER extracted {len(corrected_ids)} genealogy IDs " f"from text chunk")
-                    # Still add inferred IDs from family context
-                    if current_family_context:
-                        individual_pattern = r"\b([a-z])\.\s+([A-Z][a-zA-Z\s]+)"
-                        individual_matches = re.findall(individual_pattern, text)
-                        for letter, _name in individual_matches:
-                            inferred_id = f"{current_family_context}.{letter}"
-                            corrected_ids.append(inferred_id)
-
-                    return list(set(corrected_ids)), extraction_method  # Remove duplicates
-
-            except Exception as e:
-                logger.warning(f"NER extraction failed, falling back to regex: {e}")
-                extraction_method = "hybrid"  # Attempted NER but fell back
-
-        # Fallback to regex-based extraction
-        # 1. Extract explicit genealogical IDs (Roman.Number.letter format)
-        explicit_pattern = r"\b([IVXLCDMilvxlcdm]+|[A-Z]+)\.(\d+)\.([a-zA-Z])\b"
-        explicit_matches = re.findall(explicit_pattern, text)
-
-        for roman_part, number_part, letter_part in explicit_matches:
-            corrected_id = self._correct_genealogy_id(roman_part, number_part, letter_part, current_generation)
-            if corrected_id:
-                corrected_ids.append(corrected_id)
-
-        # 2. Extract family group headers (both English and Dutch)
-        family_group_pattern = r"\b([IVXLCDMilvxlcdm]+|[A-Z]+)\.(\d+)\.\s+(?:Children\s+of|Kinderen\s+van)"
-        family_matches = re.findall(family_group_pattern, text, re.IGNORECASE)
-
-        for roman_part, number_part in family_matches:
-            corrected_roman = self.OCR_CORRECTIONS.get(roman_part, roman_part)
-            if not self._is_valid_roman(corrected_roman):
-                corrected_roman = self._number_to_roman(current_generation)
-            family_id = f"{corrected_roman}.{number_part}"
-            corrected_ids.append(family_id)  # Store family group ID
-
-        # 3. Infer IDs for individuals with letter prefixes (if we have family context)
+        # Add inferred IDs from family context
         if current_family_context:
             individual_pattern = r"\b([a-z])\.\s+([A-Z][a-zA-Z\s]+)"
             individual_matches = re.findall(individual_pattern, text)
-
             for letter, _name in individual_matches:
                 inferred_id = f"{current_family_context}.{letter}"
                 corrected_ids.append(inferred_id)
@@ -533,6 +767,7 @@ class GenealogyChunker:
                 'places': list[str],
                 'person_names': list[str],
                 'family_groups': list[str],
+                'occupations': list[str],
                 'extraction_method': str
             }
         """
@@ -542,6 +777,8 @@ class GenealogyChunker:
             "places": [],
             "person_names": [],
             "family_groups": [],
+            "occupations": [],
+            "source_citations": [],
             "extraction_method": "regex",  # Default
         }
 
@@ -550,48 +787,61 @@ class GenealogyChunker:
         result["genealogy_ids"] = genealogy_ids
         result["extraction_method"] = extraction_method
 
-        # Extract other genealogical data using neural network if available
+        # Extract other genealogical data using regex patterns
+        # Extract dates - use comprehensive pattern first, then fill gaps with year pattern
+        raw_dates = []
+
+        # Find comprehensive dates and their positions
+        comprehensive_matches = list(GenealogyPatterns.DATE_COMPREHENSIVE.finditer(text))
+        comprehensive_dates = [match.group(0) for match in comprehensive_matches]
+        raw_dates.extend(comprehensive_dates)
+
+        # Find year-only dates that don't overlap with comprehensive matches
+        year_matches = list(GenealogyPatterns.YEAR.finditer(text))
+        for year_match in year_matches:
+            year_start, year_end = year_match.span()
+            # Check if this year overlaps with any comprehensive match
+            overlaps = any(
+                comp_start <= year_start < comp_end or comp_start < year_end <= comp_end
+                for comp_start, comp_end in [comp_match.span() for comp_match in comprehensive_matches]
+            )
+            if not overlaps:
+                raw_dates.append(year_match.group(0))
+
+        if raw_dates:
+            result["dates"] = standardize_dates(raw_dates)
+
+        # Extract places, person names, and occupations using NER model if available
         if self.ner_extractor:
             try:
-                ner_results = self.ner_extractor.extract_entities(text)
-
-                # Extract dates and standardize them
-                raw_dates = [
-                    date_item["text"] for date_item in ner_results.get("DATE", []) if date_item["confidence"] > 0.3
-                ]
-                if raw_dates:
-                    result["dates"] = standardize_dates(raw_dates)
-
-                # Extract places
-                result["places"] = [
-                    place_item["text"].strip()
-                    for place_item in ner_results.get("PLACE", [])
-                    if place_item["confidence"] > 0.3
-                ]
-
-                # Extract person names
-                result["person_names"] = [
-                    name_item["text"].strip()
-                    for name_item in ner_results.get("PERSON_NAME", [])
-                    if name_item["confidence"] > 0.3
-                ]
-
-                # Extract family groups (raw text, distinct from genealogy IDs)
-                family_groups = [
-                    fg_item["text"].strip()
-                    for fg_item in ner_results.get("FAMILY_GROUP", [])
-                    if fg_item["confidence"] > 0.3
-                ]
-                result["family_groups"] = family_groups
-
-                logger.debug(
-                    f"Extracted data - Dates: {len(result['dates'])}, "
-                    f"Places: {len(result['places'])}, "
-                    f"Names: {len(result['person_names'])}"
-                )
-
+                ner_entities = self.ner_extractor.extract_entities(text)
+                result["places"] = [entity["text"] for entity in ner_entities.get("PLACE", [])]
+                result["person_names"] = [entity["text"] for entity in ner_entities.get("PERSON_NAME", [])]
+                result["occupations"] = [entity["text"] for entity in ner_entities.get("OCCUPATION", [])]
+                result["source_citations"] = [entity["text"] for entity in ner_entities.get("SOURCE", [])]
+                result["extraction_method"] = "ner+regex"
             except Exception as e:
-                logger.warning(f"Genealogical data extraction failed, using IDs only: {e}")
+                logger.warning(f"NER extraction failed, using regex fallback: {e}")
+                result["places"] = []
+                result["person_names"] = []
+                result["occupations"] = []
+        else:
+            # Fallback to regex patterns if NER not available
+            result["places"] = []
+            result["person_names"] = []
+            result["occupations"] = []
+
+        # Extract family groups (full text matches)
+        family_group_matches = GenealogyPatterns.FAMILY_GROUP.finditer(text)
+        family_groups = [match.group(0).strip() for match in family_group_matches]
+        result["family_groups"] = family_groups
+
+        logger.debug(
+            f"Extracted data - Dates: {len(result['dates'])}, "
+            f"Places: {len(result['places'])}, "
+            f"Names: {len(result['person_names'])}, "
+            f"Occupations: {len(result['occupations'])}"
+        )
 
         return result
 
@@ -723,6 +973,8 @@ def create_document_chunks(self, document_id: str):  # noqa: ARG001
                 dates=chunk_dict["dates"],
                 places=chunk_dict["places"],
                 family_groups=chunk_dict["family_groups"],
+                occupations=chunk_dict["occupations"],
+                source_citations=chunk_dict["source_citations"],
                 extraction_method=chunk_dict["extraction_method"],
             )
             chunks_created += 1
@@ -855,20 +1107,23 @@ def process_genealogy_extraction(self, document_id: str):  # noqa: ARG001
         dict: Processing result summary
     """
     try:
-        # Phase 1: Create chunks
-        logger.info(f"Starting Phase 1: Chunking for document {document_id}")
-        chunk_result = create_document_chunks.delay(str(document_id))
-        chunk_result.get(timeout=300)  # Wait for chunking to complete
+        # Use Celery chain to orchestrate the multi-phase extraction
+        logger.info(f"Starting multi-phase extraction chain for document {document_id}")
 
-        # Phase 2: Extract entities
-        logger.info(f"Starting Phase 2: Entity extraction for document {document_id}")
-        extract_result = extract_entities_from_chunks.delay(str(document_id))
-        extract_result.get(timeout=600)  # Wait for extraction to complete
+        # Create a chain: chunking -> entity extraction
+        # Use .si() (immutable) for the second task so it doesn't receive the first task's result as an argument
+        extraction_chain = chain(
+            create_document_chunks.s(str(document_id)), extract_entities_from_chunks.si(str(document_id))
+        )
+
+        # Start the chain
+        result = extraction_chain.apply_async()
 
         return {
             "success": True,
-            "message": "Multi-phase genealogy extraction completed",
+            "message": "Multi-phase extraction chain started successfully",
             "document_id": str(document_id),
+            "chain_id": result.id,
         }
 
     except Exception as e:

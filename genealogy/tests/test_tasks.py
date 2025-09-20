@@ -30,17 +30,36 @@ class OCRTaskTests(TestCase):
             image_file=self.test_file,
         )
 
-    @patch("genealogy.tasks.OCRProcessor")
+    @patch("genealogy.tasks.RegionOCRProcessor")
+    @patch("genealogy.tasks.DocumentLayoutDetector")
+    @patch("genealogy.tasks.RotationDetector")
+    @patch("genealogy.tasks.Image.open")
     @patch("genealogy.tasks.os.path.exists")
-    def test_process_page_ocr_success(self, mock_exists, mock_ocr_processor_class):
+    def test_process_page_ocr_success(
+        self, mock_exists, mock_image_open, mock_rotation_class, mock_layout_class, mock_ocr_class
+    ):
         """process_page_ocr should complete successfully and update page"""
         # Mock file exists
         mock_exists.return_value = True
 
+        # Mock image
+        mock_image = Mock()
+        mock_image_open.return_value = mock_image
+
+        # Mock rotation detector
+        mock_rotation_detector = Mock()
+        mock_rotation_detector.detect_and_correct.return_value = (mock_image, 0.5)
+        mock_rotation_class.return_value = mock_rotation_detector
+
+        # Mock layout detector
+        mock_layout_detector = Mock()
+        mock_layout_detector.detect_regions.return_value = [{"bbox": [0, 0, 100, 100], "element": "text"}]
+        mock_layout_class.return_value = mock_layout_detector
+
         # Mock OCR processor
-        mock_processor = Mock()
-        mock_processor.process_file.return_value = ("Extracted text content", 85.5, 0.0)
-        mock_ocr_processor_class.return_value = mock_processor
+        mock_ocr_processor = Mock()
+        mock_ocr_processor.process_regions.return_value = ("Extracted text content", 85.5)
+        mock_ocr_class.return_value = mock_ocr_processor
 
         # Run task
         result = process_page_ocr(str(self.page.id))
@@ -49,7 +68,7 @@ class OCRTaskTests(TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["text"], "Extracted text content")
         self.assertEqual(result["confidence"], 85.5)
-        self.assertEqual(result["rotation_applied"], 0.0)
+        self.assertEqual(result["rotation_applied"], 0.5)
 
         # Check page was updated
         self.page.refresh_from_db()
@@ -92,13 +111,8 @@ class OCRTaskTests(TestCase):
         self.assertEqual(result["text"], "Existing text")
         self.assertEqual(result["confidence"], 90.0)
 
-    @patch("genealogy.tasks.OCRProcessor")
     @patch("genealogy.tasks.os.path.exists")
-    def test_process_page_ocr_file_not_found(
-        self,
-        mock_exists,
-        mock_ocr_processor_class,  # noqa: ARG002
-    ):
+    def test_process_page_ocr_file_not_found(self, mock_exists):
         """process_page_ocr should handle missing image files"""
         # Mock file doesn't exist
         mock_exists.return_value = False
@@ -108,17 +122,22 @@ class OCRTaskTests(TestCase):
         self.assertFalse(result["success"])
         self.assertIn("Image file not found", result["error"])
 
-    @patch("genealogy.tasks.OCRProcessor")
+    @patch("genealogy.tasks.RotationDetector")
+    @patch("genealogy.tasks.Image.open")
     @patch("genealogy.tasks.os.path.exists")
-    def test_process_page_ocr_processing_failure(self, mock_exists, mock_ocr_processor_class):
+    def test_process_page_ocr_processing_failure(self, mock_exists, mock_image_open, mock_rotation_class):
         """process_page_ocr should handle OCR processing failures"""
         # Mock file exists
         mock_exists.return_value = True
 
-        # Mock OCR processor failure
-        mock_processor = Mock()
-        mock_processor.process_file.side_effect = Exception("OCR processing failed")
-        mock_ocr_processor_class.return_value = mock_processor
+        # Mock image
+        mock_image = Mock()
+        mock_image_open.return_value = mock_image
+
+        # Mock rotation detector to raise exception
+        mock_rotation_detector = Mock()
+        mock_rotation_detector.detect_and_correct.side_effect = Exception("OCR processing failed")
+        mock_rotation_class.return_value = mock_rotation_detector
 
         result = process_page_ocr(str(self.page.id))
 

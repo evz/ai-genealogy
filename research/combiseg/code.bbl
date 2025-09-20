@@ -1,0 +1,78 @@
+\begin{thebibliography}{12}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Barakat et~al.(2018)Barakat, Droby, Kassis, and El-Sana]{measures}
+B.~Barakat, A.~Droby, M.~Kassis, and J~El-Sana.
+\newblock Text line segmentation for challenging handwritten document images
+  using fully convolutional network.
+\newblock pages 374--379, 2018.
+
+\bibitem[Bradski(2000)]{opencv}
+G.~Bradski.
+\newblock The opencv library.
+\newblock \emph{Dr. Dobb's Journal of Software Tools}, 25\penalty0
+  (11):\penalty0 120--123, 2000.
+
+\bibitem[Breuel(2008)]{ocropus}
+T.~Breuel.
+\newblock The ocropus open source ocr system.
+\newblock 2008.
+
+\bibitem[Dos~Santos et~al.(2009)Dos~Santos, Clemente, Ren, and
+  Calvalcanti]{combi}
+R.~Dos~Santos, G.~Clemente, T.~Ren, and G.~Calvalcanti.
+\newblock Text line segmentation based on morphology and histogram projection.
+\newblock pages 651--655, 2009.
+
+\bibitem[Kiessling()]{kraken}
+B.~Kiessling.
+\newblock Kraken - a universal text recognizer for the humanities.
+\newblock URL \url{http://kraken.re}.
+\newblock [Accessed Oct. 29, 2021].
+
+\bibitem[Kurar~Barakat et~al.(2020)Kurar~Barakat, Cohen, Droby, Rabaev, and
+  El-Sana]{learning}
+B.~Kurar~Barakat, R.~Cohen, A.~Droby, I.~Rabaev, and J.~El-Sana.
+\newblock Learning-free text line segmentation for historical handwritten
+  documents.
+\newblock \emph{Applied Sciences}, 10\penalty0 (22), 2020.
+
+\bibitem[Likforman-Sulem et~al.(2007)Likforman-Sulem, A., and B.]{survey}
+L.~Likforman-Sulem, Zahour A., and Taconet B.
+\newblock Text line segmentation of historical documents: a survey.
+\newblock \emph{CoRR}, abs/0704.1267:\penalty0 123--138, 2007.
+
+\bibitem[Mechi et~al.(2019)Mechi, Mehri, Ingold, and Essoukri Ben~Amara]{u-net}
+O.~Mechi, M.~Mehri, R.~Ingold, and N.~Essoukri Ben~Amara.
+\newblock Text line segmentation in historical document images using an
+  adaptive u-net architecture.
+\newblock pages 369--374, 2019.
+
+\bibitem[Otsu(1979)]{otsu}
+N.~Otsu.
+\newblock A threshold selection method from gray-level histograms.
+\newblock \emph{IEEE Transactions on Systems, Man and Cybernetics}, pages
+  62--66, 1979.
+
+\bibitem[Ptak et~al.(2017)Ptak, Zygadlo, and Unold]{usedAlgo}
+R.~Ptak, B.~Zygadlo, and O.~Unold.
+\newblock Projection–based text line segmentation with a variable threshold.
+\newblock \emph{International Journal of Applied Mathematics and Computer
+  Science}, 27:\penalty0 195--206, 2017.
+
+\bibitem[Renton et~al.(2017)Renton, Chatelain, Adam, Kermorvant, and
+  Paquet]{iou}
+G.~Renton, C.~Chatelain, S.~Adam, C.~Kermorvant, and T.~Paquet.
+\newblock Handwritten text line segmentation using fully convolutional network.
+\newblock pages 5--9, 2017.
+
+\bibitem[Virtanen et~al.(2020)Virtanen, Gommers, Oliphant, M., et~al.]{scipy}
+P.~Virtanen, R.~Gommers, T.~Oliphant, Haberland M., et~al.
+\newblock Scipy 1.0: Fundamental algorithms for scientific computing in python.
+\newblock \emph{Nature Methods}, 17:\penalty0 261--272, 2020.
+
+\end{thebibliography}

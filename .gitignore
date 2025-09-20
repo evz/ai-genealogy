@@ -140,6 +140,7 @@ staticfiles/
 static_root/
 models/
 training_*/
+datasets/
 
 # Docker
 .dockerignore

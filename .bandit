@@ -5,9 +5,12 @@ exclude_dirs:
   - "test"
   - ".venv"
   - ".git"
+  - "genealogy/training_tools"
 
 # Allow hardcoded SECRET_KEY in development settings
 # Allow HuggingFace downloads without revision pinning for development
+# Allow random usage in data generation scripts
 skips:
   - "B105"
   - "B615"
+  - "B311"

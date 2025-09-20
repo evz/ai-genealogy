@@ -17,11 +17,28 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgomp1 \
+    libopencv-dev \
+    python3-opencv \
+    libblas-dev \
+    liblapack-dev \
+    libatlas-base-dev \
+    wget \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Tesseract combined models with both legacy and LSTM components for OEM 2 support
+RUN wget -O /usr/share/tesseract-ocr/5/tessdata/eng.traineddata \
+    https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata \
+    && wget -O /usr/share/tesseract-ocr/5/tessdata/nld.traineddata \
+    https://github.com/tesseract-ocr/tessdata/raw/main/nld.traineddata
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m spacy download nl_core_news_sm
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m spacy download en_core_web_sm
 
 # Copy project files
 COPY . .

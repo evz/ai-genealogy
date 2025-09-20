@@ -358,7 +358,9 @@ class TextChunk(models.Model):
 
     CHUNK_TYPES = [
         ("HEADER", "Generation Header"),
-        ("CONTENT", "Genealogy Content"),
+        ("GENEALOGY_ENTRY", "Dense Biographical Entry"),
+        ("NARRATIVE_CONTEXT", "Related Context/Story"),
+        ("CONTENT", "General Genealogy Content"),
         ("INDEX", "Index/Reference"),
         ("OTHER", "Other"),
     ]
@@ -368,7 +370,7 @@ class TextChunk(models.Model):
 
     # Content
     text_content = models.TextField(help_text="The actual text content of this chunk")
-    chunk_type = models.CharField(max_length=10, choices=CHUNK_TYPES, default="CONTENT")
+    chunk_type = models.CharField(max_length=20, choices=CHUNK_TYPES, default="CONTENT")
 
     # Position information
     start_page = models.PositiveIntegerField(help_text="First page number this chunk appears on")
@@ -380,7 +382,7 @@ class TextChunk(models.Model):
         null=True, blank=True, help_text="Generation number (I=1, II=2, etc.)"
     )
     generation_header = models.CharField(
-        max_length=50,
+        max_length=100,
         blank=True,
         help_text="Generation header text if this chunk contains one",
     )
@@ -416,6 +418,28 @@ class TextChunk(models.Model):
         default=list,
         blank=True,
         help_text="Family group headers found in this chunk " "(Enter comma-separated values: II.9. Children of...)",
+    )
+    occupations = CommaSeparatedArrayField(
+        models.CharField(max_length=100),
+        default=list,
+        blank=True,
+        help_text="Occupations found in this chunk " "(Enter comma-separated values: metselaar, kuiper, dienstmeid)",
+    )
+    source_citations = CommaSeparatedArrayField(
+        models.CharField(max_length=200),
+        default=list,
+        blank=True,
+        help_text="Source citations (Bronverwijzing) found in this chunk "
+        "(Enter comma-separated values: RGV SSANO 16.3 Bevolkingsregister Naarden 1850-1862 dl 1 bl 156)",
+    )
+
+    # Relationships between chunks
+    related_genealogy_entry = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        help_text="For narrative chunks: the genealogy entry they provide context for",
     )
 
     # Processing status

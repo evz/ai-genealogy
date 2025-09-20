@@ -1,0 +1,347 @@
+# 1) Normalize first (once per page)
+
+* **DPI & scale:** resample to \~**400 dpi** grayscale.
+* **Deskew:** Hough or projection-profile; aim for <0.5° residual skew.
+* **Local binarization:** Sauvola/Wolf (adaptive threshold). Global Otsu often fails on white-on-black and halftones.
+* **De-speckle / light morphology:** small opening for salt-and-pepper, but avoid closing that fuses columns.
+* **Remove obvious image regions:** run a quick variance/entropy map: high-variance blocks (photos) get blanked before OCR so they don’t invent phantom columns.
+
+# 2) Segment the page into regions you control
+
+Do a simple, robust segmentation with OpenCV (or similar):
+
+* **Connected-components → line blocks:**
+
+  1. Apply a light closing horizontally (kernel \~1×k) to fuse words into lines, then vertical dilation to fuse lines into paragraphs.
+  2. Extract bounding boxes for:
+
+     * **Main body blocks** (big rectangles spanning typical margins)
+     * **Marginalia blocks** (narrow BBs hugging the outer margin—your letter “bullets”)
+     * **Reversed blocks** (mean intensity low; text lighter than background)
+     * **Captions / sidebars** (often narrower, close to images)
+* **Wrap-around images:** your variance mask from step 1 will have carved out the image; you’ll naturally end up with two text blocks left and right. That stops Tesseract from hallucinating a middle “column.”
+
+> Tip: If you don’t want to build a full layout pipeline, even a very simple “two passes of morphology + contours” is enough to get clean per-block crops.
+
+# 3) OCR each region with *the right* PSM
+
+You already saw why one PSM fails. Use these defaults:
+
+* **Main body paragraphs:** `--psm 6` (single uniform block of text).
+* **Marginalia letter-bullets / list markers:** `--psm 7` (single text line) or `--psm 13` (raw line). This captures the hanging letter cleanly without inventing columns.
+* **Short callouts / captions / footers:** `--psm 6` or `--psm 4` (single column, variable size).
+* **Single word labels (figure labels, A/B/C markers):** `--psm 8` (single word).
+* **Orientation only (rarely needed once deskewed):** `--psm 0`.
+
+OEM: if `--oem 2` (LSTM + legacy) is winning for you, keep it; otherwise test `--oem 1` (LSTM only). Some books get *more* stable layout with LSTM only.
+
+White-on-black:
+
+* Either **invert just those boxes** before OCR, **or** let Tesseract auto-invert but **turn it off for the rest**:
+
+  * reversed boxes: leave default (`tessedit_do_invert=1`)
+  * all other boxes: `-c tessedit_do_invert=0`
+    Masking the reversed blocks helps *if* you also prevent global inversion elsewhere; otherwise it can confuse textord.
+
+Tables (if present) and phantom columns:
+
+* Disable table finding unless you truly have tables:
+  `-c textord_tablefind_recognize_tables=0 -c textord_tabfind_find_tables=0`
+  This often stops the “mystery column in the middle of a paragraph.”
+
+# 4) Keep your own reading order
+
+Don’t rely on page-wide reading order from Tesseract if you’re cropping regions. Instead:
+
+* **Sort by top (y), then left (x)** within each “column” block.
+* **Attach marginalia to the nearest line** by y-overlap. Store (x1,y1,x2,y2) boxes and do a simple overlap/join rule so the bullet letter is emitted **before** its line.
+* Output **hOCR/ALTO/TSV** per region, then stitch in your order. TSV is easiest to parse; it carries confidences to help you catch obvious errors.
+
+# 5) Command templates you can drop in
+
+Main paragraph block:
+
+```
+tesseract body.png stdout --dpi 400 --oem 2 --psm 6 \
+  -l eng \
+  -c preserve_interword_spaces=1 \
+  -c textord_tablefind_recognize_tables=0 -c textord_tabfind_find_tables=0 \
+  tsv
+```
+
+Marginal letter bullets (one cropped line at a time):
+
+```
+tesseract margin_line.png stdout --dpi 400 --oem 2 --psm 7 -l eng tsv
+```
+
+Reversed callout (already inverted to black-on-white):
+
+```
+tesseract callout_inv.png stdout --dpi 400 --oem 2 --psm 6 -l eng tsv
+```
+
+# 6) Small but high-impact tweaks
+
+* **Pad crops:** add \~15–25 px padding around each crop before OCR so edge glyphs (your hanging letters) aren’t clipped by binarization or CC analysis.
+* **Preserve spaces:** `-c preserve_interword_spaces=1` keeps layout-relevant spacing (helps lists).
+* **Language packs:** if you see mixed scripts (smart quotes, math, etc.), include them (e.g., `-l eng+equ`), but avoid piling on languages you don’t need (hurts accuracy).
+* **Whitelist when safe:** for lettered bullets strictly `[A-Z)]` or `[a-z)]`, you can use `tessedit_char_whitelist` *on those small crops only* to boost reliability.
+* **Confidences to gate merges:** if a marginal bullet comes back with very low avg conf, don’t merge it; keep the line text alone to avoid poisoning.
+
+# 7) Debugging what’s “too smart”
+
+When Tesseract surprises you, visualize what it thinks:
+
+* Run once with **hOCR** (`-c hocr_char_boxes=1 hocr`) and overlay the boxes on the image. You’ll immediately see phantom columns or inverted-region misfires.
+* Try **`--psm 1` vs `3`** on a *full* page and compare hOCR. If 3 is chopping marginalia, it’s because the page-level text detection shrank the body block to the “safe interior,” cutting off the hangouts—another reason to crop and use `6/7`.
+
+# 8) If you want a minimal OpenCV skeleton
+
+Pseudocode (Python/OpenCV):
+
+```python
+img = load_grayscale(page)
+img = deskew(img)
+bin = sauvola(img)
+
+# remove images
+mask_img = (local_variance(img, k=25) > T).morph_open()
+bin_noimg = bin.copy()
+bin_noimg[mask_img] = 255
+
+# block segmentation
+hclose = morph_close(bin_noimg, (1, 15))
+vclose = morph_close(hclose, (15, 1))
+blocks = find_contours(vclose)
+
+for b in blocks:
+    crop = pad(crop_rect(img, b), 20)
+    if is_reversed(crop): crop = invert(crop)
+    if is_margin(b): psm = 7
+    elif is_caption(b): psm = 4
+    else: psm = 6
+    text, tsv = tesseract(crop, psm=psm, oem=2)
+    place_in_reading_order(text, b)
+```
+
+# 9) Triage checklist for your exact symptoms
+
+* **PSM 3 chops hanging letters:** stop full-page PSM 3; crop body vs margins; use `psm 6` for body and `psm 7/13` for margin lines.
+* **PSM 4/6 invents a middle column:** remove images before OCR and disable table finding; ensure deskew is excellent; prefer per-block OCR.
+* **Reversed sections still flaky:** either invert only those boxes and set `tessedit_do_invert=0` elsewhere, or keep global default but don’t mask unless you also block table detection.
+* **Variable fonts/sizes:** let LSTM handle it (`--oem 1` or `2`), but do **not** mix wildly different text scales in the same crop.
+
+“remove obvious image regions” can be made **much faster** at 600 dpi if you build the mask at **low resolution**, then scale it back up. You don’t need to touch every pixel at full res.
+
+Here’s a speed-first approach that’s usually 10–50× faster in practice:
+
+## The fast path (thumbnail mask → upscale)
+
+1. **Downscale just for masking**
+   Make a thumbnail at **\~150–200 dpi** (e.g., scale 600→0.25–0.33). This shrinks a 3500×5000 page to \~900×1300.
+
+2. **Compute a cheap “texture” score**
+   Use a single-pass **box filter variance** (means & means-of-squares via `cv2.blur`) on the grayscale thumbnail. Photos/halftones have high local variance; text on white paper doesn’t.
+
+3. **Threshold & clean**
+   Otsu (or a fixed threshold) on the variance map → binary “image-ish” mask.
+   Do a small **opening** (remove thin text edges) then **closing/dilate** a bit to cover the whole photo area.
+
+4. **Upscale the mask**
+   Resize mask back to 600 dpi with **nearest-neighbor** and **dilate 1–2 px** at full res for safety.
+
+5. **Apply mask**
+   Set masked regions to white *before* OCR so Tesseract doesn’t hallucinate columns.
+
+### Drop-in OpenCV snippet (fast & vectorized)
+
+```python
+import cv2
+import numpy as np
+
+def fast_image_mask_600dpi(gray_600, scale=0.25, var_ksize=31, open_ks=3, close_ks=7):
+    # 1) Downscale for speed
+    small = cv2.resize(gray_600, (0,0), fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+
+    # 2) Variance via blur (O(N))
+    small_f = small.astype(np.float32)
+    m1 = cv2.blur(small_f, (var_ksize, var_ksize))
+    m2 = cv2.blur(small_f*small_f, (var_ksize, var_ksize))
+    var = cv2.max(m2 - m1*m1, 0)  # local variance
+
+    # 3) Threshold + morphology
+    v = cv2.normalize(var, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    _, mask = cv2.threshold(v, 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  cv2.getStructuringElement(cv2.MORPH_RECT, (open_ks, open_ks)))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (close_ks, close_ks)))
+
+    # 4) Upscale to full res and pad a bit
+    mask_full = cv2.resize(mask, (gray_600.shape[1], gray_600.shape[0]), interpolation=cv2.INTER_NEAREST)
+    mask_full = cv2.dilate(mask_full, cv2.getStructuringElement(cv2.MORPH_RECT, (3,3)), iterations=1)
+
+    return mask_full  # 255 where images likely are
+
+# Usage:
+# gray = cv2.imread("page.png", cv2.IMREAD_GRAYSCALE)
+# img_mask = fast_image_mask_600dpi(gray)
+# page_for_ocr = gray.copy()
+# page_for_ocr[img_mask==255] = 255  # blank the images
+```
+
+### Why this is quick
+
+* All heavy ops run on a **thumbnail**.
+* Only **box filters** and morphology (cache-friendly & multi-threaded).
+* No Python loops; everything is vectorized.
+
+---
+
+## Extra speed knobs (optional)
+
+* **Go even smaller** for clean books: scale to **0.2** (\~120 dpi).
+* **Stride subsampling:** compute the variance on a slightly **blurred** thumbnail and skip morphology kernel inflation.
+* **Parallel tiles:** if pages are huge, process in tiles (but the thumbnail method often makes this unnecessary).
+* **Edge-density alternative:** instead of variance, compute `Sobel` magnitude, blur it, then threshold; halftones/photos are dense edges vs. text’s directional strokes.
+* **GPU (if available):** OpenCV’s CUDA for `resize`, `blur`, `threshold`, and morphology can shave more time if you batch pages.
+
+---
+
+## Accuracy guardrails
+
+* After upscaling, **dilate** 1–2 px to ensure you fully cover the photo border (avoid a dark ring that can trick Tesseract).
+* If small diagrams get falsely masked, reduce `var_ksize` a bit (e.g., 23) or slightly raise the threshold (replace Otsu with a fixed value like `cv2.threshold(v, 90, 255, cv2.THRESH_BINARY)` depending on your normalization).
+* Keep this mask strictly for **photo/halftone removal**; don’t try to separate columns here. Your text segmentation can stay as-is and will run faster with images blanked.
+
+It turns out that “find-the-image” heuristics (variance/entropy, etc.) are brittle. Flip the problem:
+
+## Detect text reliably → everything else is “image”
+
+This is far more stable across fonts, halftones, and white-on-black.
+
+### Option A — Fast pass with Tesseract itself (no extra models)
+
+1. Downscale page to \~150–200 dpi (speeds things up, still finds words).
+2. Run **sparse text** detection:
+
+```
+tesseract page.png stdout --psm 11 --oem 1 -l eng tsv
+```
+
+* `--psm 11` = “sparse text”, good at sprinkling word boxes without doing heavy layout.
+
+3. From the TSV, collect `left, top, width, height` for **words with conf ≥ 60–70**.
+4. Inflate each word box by \~0.4× text height on all sides, then **union** them (dilate) to form a **text mask**.
+5. **Upscale** the mask back to full res if you downscaled.
+6. **Image mask = NOT(text mask)**. Apply that before your combiseg.
+
+Why this works: we only need *where text is*, not perfect OCR. Even if a few words are missed, dilation bridges the gaps. It’s fast (Tesseract on a thumbnail), deterministic, and robust to white-on-black because gradients still fire.
+
+**Knobs**
+
+* DPI for the quick pass: 150 if pages are clean; 200 if small fonts.
+* Confidence cutoff: 60–70 (lower if recall is poor).
+* Dilation scale (in pixels): about **0.6×–0.8× the median word height**.
+
+### Option B — Use a dedicated text detector (EAST / CRAFT / DB)
+
+These are built to find text regardless of background/texture.
+
+* **EAST (OpenCV DNN)**: single forward pass, outputs rotated boxes. Works great at 1024–1280 px on the long edge.
+* **CRAFT / DB**: even better recall on tiny text, but slightly heavier.
+
+**Pipeline**
+
+1. Resize page so long edge ≈ 1024–1280 px.
+2. Run detector → list of boxes/quads.
+3. Scale boxes back to full resolution; **merge & dilate** a bit (≈0.25–0.4× text height).
+4. **Text mask = union of boxes**, **Image mask = inverse**.
+
+Pros: very accurate on captions and wrap-around; insensitive to halftones.
+Cons: you need to ship a tiny model file (EAST’s pb is \~25 MB).
+
+### Option C — Classical text CCs (fast, no ML)
+
+If you can’t use models and don’t want Tesseract in the loop:
+
+1. **Binarize adaptively** (Sauvola/Wolf).
+2. **MSER** or connected components on the binarized image.
+3. Filter CCs by texty features:
+
+   * Size near the **median CC height** (ignore huge/super tiny).
+   * **Stroke width variance** small (SWT or distance transform proxy).
+   * Aspect ratio 0.2–5, **solidity** > 0.4, **eccentricity** \~0.6–0.98.
+4. Group CCs into lines with **RLSA** (run-length smoothing) horizontally.
+5. Dilate grouped lines to form the **text mask**, invert → image mask.
+
+This is fast and surprisingly good once thresholds are tuned per DPI. Use **percentile-based** thresholds (e.g., keep CCs within 20–300% of median height) so it adapts across pages.
+
+---
+
+## Handling tricky cases
+
+* **Captions touching photos:** After you make the image mask, apply a **1–2 px erosion** to pull it off the text edges, then add back the text mask (i.e., final image mask = eroded(image mask) AND NOT(text mask)).
+* **White-on-black callouts:** Text detectors still fire; if not, quickly **invert** those high-ink tiles (mean intensity low) *before* text detection, then invert back after masking.
+* **Margins & lettered bullets:** Text detectors will include them; just keep dilation modest so the text mask doesn’t swallow nearby images.
+
+---
+
+## What’s quickest in practice?
+
+* If you already have Tesseract in your stack: **Option A**. One low-res pass + dilation is usually the best accuracy/time tradeoff.
+* If you can add one small model: **Option B (EAST)** for maximal robustness; still fast on CPU.
+
+---
+
+## Pseudo-code (Option A) you can drop in
+
+```python
+import cv2, numpy as np, pandas as pd, subprocess, tempfile, os
+
+def text_mask_via_tesseract(gray_600, lang='eng', psm=11, conf_min=65, scale=0.33):
+    # 1) Downscale
+    small = cv2.resize(gray_600, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    # 2) Run Tesseract TSV on the thumbnail
+    with tempfile.TemporaryDirectory() as td:
+        small_path = os.path.join(td, 'p.png'); cv2.imwrite(small_path, small)
+        cmd = ['tesseract', small_path, 'stdout', '--oem','1','--psm',str(psm),'-l',lang,'tsv']
+        tsv = subprocess.check_output(cmd, text=True)
+    # 3) Parse TSV → word boxes
+    rows = [r.split('\t') for r in tsv.splitlines()]
+    hdr = rows[0]; data = [dict(zip(hdr, r)) for r in rows[1:] if len(r)==len(hdr)]
+    boxes = []
+    for d in data:
+        if d.get('level') == '5':  # word level
+            try:
+                conf = float(d['conf'])
+                if conf >= conf_min:
+                    x, y, w, h = map(int, [d['left'], d['top'], d['width'], d['height']])
+                    boxes.append((x,y,w,h))
+            except: pass
+    mask_small = np.zeros(small.shape, np.uint8)
+    if boxes:
+        h_med = np.median([h for _,_,_,h in boxes])
+        pad = int(max(2, 0.6*h_med))
+        for x,y,w,h in boxes:
+            cv2.rectangle(mask_small, (x-pad, y-pad), (x+w+pad, y+h+pad), 255, -1)
+        # Mild closing to bridge gaps
+        k = int(max(3, 0.3*h_med))
+        mask_small = cv2.morphologyEx(mask_small, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT,(k,k)))
+    # 4) Upscale to full res
+    text_mask = cv2.resize(mask_small, (gray_600.shape[1], gray_600.shape[0]), interpolation=cv2.INTER_NEAREST)
+    # 5) Image mask is the inverse
+    image_mask = cv2.bitwise_not(text_mask)
+    # Optional: shave 1px from image mask to avoid hugging text edges
+    image_mask = cv2.erode(image_mask, cv2.getStructuringElement(cv2.MORPH_RECT,(3,3)), iterations=1)
+    image_mask[text_mask==255] = 0
+    return text_mask, image_mask
+```
+
+---
+
+## Quick checklist to improve accuracy
+
+* Tune **conf\_min** to trade recall/precision; then use dilation to fill holes.
+* Base dilations on **median detected word height**, not fixed pixels (DPI-aware).
+* Always **visualize**: overlay text mask (e.g., green) and image mask (red) to spot misses.
+* Final safeguard: after masking, run a quick pass counting **CCs** inside image regions; if there’s a lot of small CCs (a sign of mis-masked text), shrink the image mask locally.

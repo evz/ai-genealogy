@@ -24,6 +24,7 @@ from .models import (
 )
 from .ollama_utils import get_default_models
 from .tasks import (
+    create_document_chunks,
     process_genealogy_extraction,
     process_page_ocr,
 )
@@ -135,7 +136,7 @@ class DocumentAdmin(admin.ModelAdmin):
 
     extraction_status.short_description = "Extraction Status"  # type: ignore
 
-    actions = ["extract_genealogy_data"]
+    actions = ["extract_genealogy_data", "rerun_text_chunking"]
 
     def extract_genealogy_data(self, request, queryset):
         """Admin action: Start multi-phase genealogy extraction for selected documents"""
@@ -189,6 +190,52 @@ class DocumentAdmin(admin.ModelAdmin):
 
     extract_genealogy_data.short_description = (  # type: ignore
         "Extract genealogy data from processed documents"
+    )
+
+    def rerun_text_chunking(self, request, queryset):
+        """Admin action: Re-run text chunking process for selected documents"""
+        success_count = 0
+        error_count = 0
+
+        for doc in queryset:
+            if not doc.ocr_completed:
+                error_count += 1
+                self.message_user(
+                    request,
+                    f"Document {doc.title} is not ready for chunking (OCR must be completed first).",
+                    level=messages.WARNING,
+                )
+                continue
+
+            try:
+                # Start text chunking task
+                task = create_document_chunks.delay(str(doc.id))
+                success_count += 1
+                logger.info(f"Started text chunking task {task.id} for document {doc}")
+
+            except Exception as e:
+                error_count += 1
+                self.message_user(
+                    request,
+                    f"Error starting text chunking for {doc.title}: {e}",
+                    level=messages.ERROR,
+                )
+
+        if success_count:
+            self.message_user(
+                request,
+                f"Text chunking started for {success_count} documents. "
+                f"This will clear and recreate all text chunks for these documents.",
+            )
+        if error_count:
+            self.message_user(
+                request,
+                f"{error_count} documents could not be processed.",
+                level=messages.WARNING,
+            )
+
+    rerun_text_chunking.short_description = (  # type: ignore
+        "Re-run text chunking for selected documents (clears existing chunks)"
     )
 
     def batch_upload_view(self, request):

@@ -29,10 +29,17 @@ services:
       - redis
     env_file:
       - .env
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   celery:
     build: .
-    command: celery -A genealogy_extractor worker --loglevel=info
+    command: celery -A genealogy_extractor worker --pool=solo --loglevel=info
     volumes:
       - .:/app  # Mount current directory for development
       - media_files:/app/media  # Shared media files for processing
@@ -41,6 +48,13 @@ services:
       - redis
     env_file:
       - .env
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   celery-beat:
     build: .

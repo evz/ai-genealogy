@@ -150,12 +150,12 @@ Based on lessons learned from previous over-engineered attempt:
    - Visual admin interface to compare regex vs. neural network results side-by-side
    - Fallback logic: neural network primary, regex backup for low-confidence predictions
 
-7. **Enhanced OCR with Advanced Rotation Detection**
-   - Two-stage rotation correction: major angle detection (0°/90°/180°/270°) + fine-angle adjustments (±10°)
-   - Computer vision techniques: Hough line detection, projection profile analysis, Canny edge detection
-   - Addresses complex rotation issues where pages need 182.3° correction instead of simple 180°
-   - OpenCV integration with morphological operations for robust text line detection
-   - Recovers previously missing OCR content from improperly rotated genealogy book pages
+7. **DocLayout-YOLO OCR Pipeline**
+   - Modular three-component architecture: RotationDetector, DocumentLayoutDetector, RegionOCRProcessor
+   - Deep learning document layout detection using DocLayout-YOLO model
+   - GPU-accelerated rotation detection with coarse + fine correction stages
+   - Smart text ordering (main content vs inset content) with deduplication
+   - Confidence calculation weighted by character count for improved accuracy
 
 8. **Comprehensive Date Standardization System**
    - Multi-format Dutch/English date parsing: "15 maart 1654" → "1654-03-15" (ISO format)
@@ -214,9 +214,10 @@ Document (title, languages, models_used)
 
 ### Key Technical Innovations
 
-#### OCR Processing & Quality Enhancement
-- **Advanced Rotation Detection**: Two-stage computer vision approach using Hough line detection, projection profiles, and OpenCV morphological operations to handle complex page orientations beyond simple 90° increments
-- **OCR Correction Mapping**: Systematic correction of Roman numeral OCR errors (IL→II, XIL→XII, VIL→VII) based on empirical analysis of genealogical text patterns
+#### DocLayout-YOLO OCR Architecture
+- **Modular Pipeline Design**: Three-component architecture (RotationDetector, DocumentLayoutDetector, RegionOCRProcessor) for separation of concerns and easier testing
+- **Deep Learning Layout Detection**: DocLayout-YOLO model for intelligent document structure analysis and region detection
+- **Smart Text Processing**: Region-based OCR with intelligent text ordering, deduplication, and confidence weighting
 - **Multi-Format Processing Pipeline**: Unified handling of PDF, JPG, PNG, TIFF with Tesseract OCR and confidence scoring
 
 #### Intelligent Text Processing
@@ -243,6 +244,9 @@ DB_HOST=localhost  # (resolved from the-area.local in Docker)
 DB_NAME=genealogy_extractor
 DB_USER=postgres
 DB_PASSWORD=postgres
+
+# DocLayout-YOLO OCR Pipeline
+DOCLAYOUT_MODEL_PATH=/app/models/doclayout_yolo_docstructbench_imgsz1280_2501.pt
 
 # Ollama Models
 OLLAMA_HOST=the-area.local
