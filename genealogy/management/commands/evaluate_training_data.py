@@ -156,7 +156,7 @@ class Command(BaseCommand):
         # Count data sources
         if sentence.get("source") == "CoNLL-2002-Dutch":
             issues["genealogy_vs_conll"]["conll"] += 1
-        elif sentence.get("source") == "genealogy-specific":
+        elif sentence.get("source") == "genealogy":
             issues["genealogy_vs_conll"]["genealogy"] += 1
 
         # Analyze entities
