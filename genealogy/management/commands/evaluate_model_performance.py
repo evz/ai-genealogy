@@ -20,7 +20,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand
 
-from genealogy.ner_extractor import NERExtractor
+from genealogy.ner_extractor import GenealogyNERExtractor
 
 
 class Command(BaseCommand):
@@ -127,10 +127,10 @@ class Command(BaseCommand):
         latest_model = sorted(model_dirs, key=lambda x: x.name)[-1]
         return str(latest_model)
 
-    def load_model(self, model_path: str) -> NERExtractor | None:
+    def load_model(self, model_path: str) -> GenealogyNERExtractor | None:
         """Load the trained NER model"""
         try:
-            model = NERExtractor(model_path=model_path)
+            model = GenealogyNERExtractor(model_path=model_path)
             self.stdout.write("✅ Model loaded successfully")
             return model
         except Exception as e:
@@ -168,7 +168,7 @@ class Command(BaseCommand):
 
         return sentences
 
-    def evaluate_model(self, model: NERExtractor, test_sentences: list[dict], confidence_threshold: float) -> dict:
+    def evaluate_model(self, model: GenealogyNERExtractor, test_sentences: list[dict], confidence_threshold: float) -> dict:
         """Evaluate model performance on test sentences"""
 
         # Track predictions and ground truth
