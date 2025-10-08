@@ -18,6 +18,9 @@ spacy==3.8.2
 doclayout_yolo==0.0.4
 kornia==0.8.1
 shapely==2.0.6
+pgvector==0.3.6
+abydos==0.5.0
+anthropic==0.40.0
 
 # Development dependencies
 ruff==0.8.4

@@ -22,76 +22,15 @@ from .models import (
     Place,
     TextChunk,
 )
-from .ollama_utils import get_default_models
+from .ollama_utils import OllamaClient, get_default_models
 from .tasks import (
     create_document_chunks,
-    process_genealogy_extraction,
+    extract_entities_from_chunks,
+    extract_entities_from_chunk,
     process_page_ocr,
 )
 
 logger = logging.getLogger(__name__)
-
-
-class TextChunkAdminForm(forms.ModelForm):
-    """Custom form for TextChunk admin with user-friendly curation fields"""
-
-    class Meta:
-        model = TextChunk
-        fields = [
-            "text_content",
-            "chunk_type",
-            "start_page",
-            "end_page",
-            "sequence_number",
-            "generation_number",
-            "generation_header",
-            "genealogy_ids",
-            "person_names",
-            "dates",
-            "places",
-            "family_groups",
-            "entities_extracted",
-            "manually_reviewed",
-            "extraction_method",
-        ]
-        widgets = {
-            "genealogy_ids": forms.Textarea(
-                attrs={
-                    "rows": 2,
-                    "cols": 80,
-                    "placeholder": "II.1.a, II.1.b, III.5.c (leave empty if no IDs in this chunk)",
-                }
-            ),
-            "person_names": forms.Textarea(
-                attrs={
-                    "rows": 2,
-                    "cols": 80,
-                    "placeholder": "Johan van der Berg, Maria Janssen, Pieter de Wit",
-                }
-            ),
-            "dates": forms.Textarea(
-                attrs={
-                    "rows": 2,
-                    "cols": 80,
-                    "placeholder": "1654-03-15, 1658-12-22, 1675-01-01",
-                }
-            ),
-            "places": forms.Textarea(
-                attrs={
-                    "rows": 2,
-                    "cols": 80,
-                    "placeholder": "Amsterdam, Utrecht, Haarlem",
-                }
-            ),
-            "family_groups": forms.Textarea(
-                attrs={
-                    "rows": 2,
-                    "cols": 80,
-                    "placeholder": "II.9. Children of..., III.1. Kinderen van...",
-                }
-            ),
-            "text_content": forms.Textarea(attrs={"rows": 10, "cols": 80}),
-        }
 
 
 @admin.register(Document)
@@ -136,36 +75,37 @@ class DocumentAdmin(admin.ModelAdmin):
 
     extraction_status.short_description = "Extraction Status"  # type: ignore
 
-    actions = ["extract_genealogy_data", "rerun_text_chunking"]
+    actions = ["extract_genealogy_data", "rerun_text_chunking", "reset_extraction_status"]
 
     def extract_genealogy_data(self, request, queryset):
-        """Admin action: Start multi-phase genealogy extraction for selected documents"""
+        """Admin action: Start LLM-based entity extraction from chunks for selected documents"""
         success_count = 0
         error_count = 0
 
         for doc in queryset:
-            if not doc.can_extract_genealogy():
+            # Check if document has chunks ready for extraction
+            if not doc.text_chunks.filter(chunk_type="GENEALOGY_ENTRY").exists():
                 error_count += 1
                 self.message_user(
                     request,
-                    f"Document {doc.title} is not ready for extraction (OCR must be completed first).",
+                    f"Document {doc.title} has no GENEALOGY_ENTRY chunks. Run text chunking first.",
                     level=messages.WARNING,
                 )
                 continue
 
             try:
-                # Get default models from environment
+                # Get default models from environment and update document
                 defaults = get_default_models()
 
-                # Store model configuration in document
+                # Always update to current environment defaults
                 doc.llm_model_used = defaults["llm_model"]
                 doc.embedding_model_used = defaults["embedding_model"]
                 doc.save(update_fields=["llm_model_used", "embedding_model_used"])
 
-                # Start multi-phase extraction process
-                task = process_genealogy_extraction.delay(str(doc.id))
+                # Start entity extraction process
+                task = extract_entities_from_chunks.delay(str(doc.id))
                 success_count += 1
-                logger.info(f"Started genealogy extraction task {task.id} for document {doc}")
+                logger.info(f"Started entity extraction task {task.id} for document {doc}")
 
             except Exception as e:
                 error_count += 1
@@ -179,7 +119,7 @@ class DocumentAdmin(admin.ModelAdmin):
             defaults = get_default_models()
             self.message_user(
                 request,
-                f"Genealogy extraction started for {success_count} documents using {defaults['llm_model']} (LLM) and {defaults['embedding_model']} (embeddings).",
+                f"Entity extraction started for {success_count} documents using {defaults['llm_model']}.",
             )
         if error_count:
             self.message_user(
@@ -189,7 +129,7 @@ class DocumentAdmin(admin.ModelAdmin):
             )
 
     extract_genealogy_data.short_description = (  # type: ignore
-        "Extract genealogy data from processed documents"
+        "Extract entities from chunks (LLM extraction)"
     )
 
     def rerun_text_chunking(self, request, queryset):
@@ -236,6 +176,33 @@ class DocumentAdmin(admin.ModelAdmin):
 
     rerun_text_chunking.short_description = (  # type: ignore
         "Re-run text chunking for selected documents (clears existing chunks)"
+    )
+
+    def reset_extraction_status(self, request, queryset):
+        """Admin action: Reset extraction status to allow re-extraction"""
+        # Bulk reset all chunks for selected documents
+        chunks_reset = TextChunk.objects.filter(
+            document__in=queryset,
+            entities_extracted=True
+        ).update(
+            entities_extracted=False,
+            extracted_people=[],
+            extracted_relationships=[],
+            extracted_events=[],
+            dm_codes=[]
+        )
+
+        # Reset document extraction status
+        queryset.update(extraction_completed=False)
+
+        self.message_user(
+            request,
+            f"Reset extraction status for {queryset.count()} documents ({chunks_reset} chunks). "
+            f"You can now re-run entity extraction.",
+        )
+
+    reset_extraction_status.short_description = (  # type: ignore
+        "Reset extraction status (clear extracted data)"
     )
 
     def batch_upload_view(self, request):
@@ -651,17 +618,14 @@ class ParentChildRelationshipAdmin(admin.ModelAdmin):
 
 @admin.register(TextChunk)
 class TextChunkAdmin(admin.ModelAdmin):
-    form = TextChunkAdminForm
     list_display = [
         "__str__",
         "document",
         "chunk_type",
         "sequence_number",
         "generation_number",
-        "extraction_method",
-        "manually_reviewed",
-        "entities_extracted",
-        "genealogy_ids_count",
+        "char_count",
+        "token_count",
     ]
     list_filter = [
         "chunk_type",
@@ -671,8 +635,14 @@ class TextChunkAdmin(admin.ModelAdmin):
         "generation_number",
         "document",
     ]
-    search_fields = ["text_content", "generation_header", "genealogy_ids"]
-    readonly_fields = ["id", "created_at", "updated_at"]
+    search_fields = ["text_content", "generation_header"]
+    readonly_fields = [
+        "id", "created_at", "updated_at", "document", "chunk_type", "sequence_number",
+        "start_page", "end_page", "entities_extracted", "generation_number",
+        "generation_header", "family_groups", "text_content", "extraction_method",
+        "formatted_people", "formatted_relationships", "formatted_events"
+    ]
+    actions = ["reextract_entities"]
 
     fieldsets = (
         (
@@ -695,28 +665,25 @@ class TextChunkAdmin(admin.ModelAdmin):
             "Genealogical Anchors",
             {
                 "fields": (
+                    "entities_extracted",
                     "generation_number",
                     "generation_header",
-                    "genealogy_ids",
-                    "person_names",
-                    "dates",
-                    "places",
                     "family_groups",
-                    "manually_reviewed",
                 ),
-                "description": "All genealogical data extracted from this chunk. You can manually review and correct these values.",
+                "description": "Genealogical context for this chunk.",
+            },
+        ),
+        (
+            "Structured Extraction (Graph Data)",
+            {
+                "fields": ("formatted_people", "formatted_relationships", "formatted_events"),
+                "description": "Structured person and relationship data extracted by LLM for graph building.",
             },
         ),
         (
             "Content",
             {
                 "fields": ("text_content",),
-            },
-        ),
-        (
-            "Processing Status",
-            {
-                "fields": ("entities_extracted", "extraction_method"),
             },
         ),
         (
@@ -728,27 +695,140 @@ class TextChunkAdmin(admin.ModelAdmin):
         ),
     )
 
-    def genealogy_ids_count(self, obj: TextChunk) -> int:
-        return len(obj.genealogy_ids)
+    def char_count(self, obj: TextChunk) -> str:
+        """Display character count"""
+        count = len(obj.text_content)
+        return f"{count:,}"
 
-    genealogy_ids_count.short_description = "ID Count"  # type: ignore
+    char_count.short_description = "Chars"  # type: ignore
 
-    def extraction_method(self, obj: TextChunk) -> str:
-        """Display extraction method with color coding"""
-        method = obj.extraction_method
-        if method == "neural_network":
-            return format_html('<span style="color: blue; font-weight: bold;">🧠 Neural Network</span>')
-        if method == "hybrid":
-            return format_html('<span style="color: orange; font-weight: bold;">⚡ Hybrid</span>')
-        # regex
-        return format_html('<span style="color: gray;">🔍 Regex</span>')
+    def token_count(self, obj: TextChunk) -> str:
+        """Display approximate token count (chars / 4)"""
+        count = len(obj.text_content) // 4
+        return f"~{count:,}"
 
-    extraction_method.short_description = "Extraction Method"  # type: ignore
+    token_count.short_description = "Tokens"  # type: ignore
 
-    def manually_reviewed(self, obj: TextChunk) -> str:
-        """Display manual review status with color coding"""
-        if obj.manually_reviewed:
-            return format_html('<span style="color: green; font-weight: bold;">✅ Reviewed</span>')
-        return format_html('<span style="color: orange;">⏳ Pending</span>')
+    def formatted_people(self, obj: TextChunk) -> str:
+        """Display extracted people in a readable format"""
+        if not obj.extracted_people:
+            return format_html('<em>No people extracted yet</em>')
 
-    manually_reviewed.short_description = "Manual Review"  # type: ignore
+        html_parts = []
+        for i, person_name in enumerate(obj.extracted_people, 1):
+            html_parts.append(f"{i}. <strong>{person_name}</strong>")
+
+        return format_html("<br>".join(html_parts))
+
+    formatted_people.short_description = "Extracted People"  # type: ignore
+
+    def formatted_relationships(self, obj: TextChunk) -> str:
+        """Display extracted relationships in a readable format"""
+        if not obj.extracted_relationships:
+            return format_html('<em>No relationships extracted yet</em>')
+
+        html_parts = []
+        for i, rel in enumerate(obj.extracted_relationships, 1):
+            person1 = rel.get('person1', 'Unknown')
+            person2 = rel.get('person2', 'Unknown')
+            rel_type = rel.get('relationship_type', 'unknown')
+
+            html_parts.append(
+                f"<strong>{i}.</strong> {person1} → <em>{rel_type}</em> → {person2}"
+            )
+
+        return format_html("<br>".join(html_parts))
+
+    formatted_relationships.short_description = "Extracted Relationships"  # type: ignore
+
+    def formatted_events(self, obj: TextChunk) -> str:
+        """Display extracted events in a readable format"""
+        if not obj.extracted_events:
+            return format_html('<em>No events extracted yet</em>')
+
+        html_parts = []
+        for i, event in enumerate(obj.extracted_events, 1):
+            person = event.get('person', 'Unknown')
+            event_type = event.get('event_type', 'UNKNOWN')
+            date = event.get('date', '')
+            place = event.get('place', '')
+
+            parts = [f"<strong>{i}.</strong> {person}"]
+            parts.append(f"<span style='color: #0066cc;'>{event_type}</span>")
+
+            if date:
+                parts.append(f"on {date}")
+            if place:
+                parts.append(f"in {place}")
+
+            html_parts.append(" ".join(parts))
+
+        return format_html("<br>".join(html_parts))
+
+    formatted_events.short_description = "Extracted Events"  # type: ignore
+
+    def has_add_permission(self, request):
+        """Disable adding text chunks through admin"""
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        """Disable editing text chunks through admin"""
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        """Disable deleting text chunks through admin"""
+        return False
+
+    def reextract_entities(self, request, queryset):
+        """Admin action: Re-run entity extraction for selected chunks"""
+        # Only process GENEALOGY_ENTRY chunks
+        chunks = queryset.filter(chunk_type="GENEALOGY_ENTRY")
+
+        if not chunks.exists():
+            self.message_user(
+                request,
+                "No GENEALOGY_ENTRY chunks selected. Only genealogy entries can be extracted.",
+                level=messages.WARNING
+            )
+            return
+
+        # Initialize Ollama client
+        ollama = OllamaClient(timeout=600)
+        if not ollama.is_available():
+            self.message_user(
+                request,
+                "Ollama server is not available. Cannot perform extraction.",
+                level=messages.ERROR
+            )
+            return
+
+        # Get model from first chunk's document or use default
+        first_chunk = chunks.first()
+        model = first_chunk.document.llm_model_used or get_default_models()["llm_model"]
+
+        success_count = 0
+        failed_count = 0
+
+        for chunk in chunks:
+            result = extract_entities_from_chunk(chunk, ollama, model)
+            if result['success']:
+                success_count += 1
+            else:
+                failed_count += 1
+
+        # Show summary message
+        if success_count > 0:
+            self.message_user(
+                request,
+                f"Successfully re-extracted {success_count} chunk(s) using {model}.",
+                level=messages.SUCCESS
+            )
+
+        if failed_count > 0:
+            self.message_user(
+                request,
+                f"Failed to extract {failed_count} chunk(s). Check logs for details.",
+                level=messages.ERROR
+            )
+
+    reextract_entities.short_description = "Re-extract entities from selected chunks"

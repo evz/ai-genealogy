@@ -147,6 +147,14 @@ CELERY_TIMEZONE = TIME_ZONE
 # Document Layout Detection Model Path
 DOCLAYOUT_MODEL_PATH = os.environ["DOCLAYOUT_MODEL_PATH"]
 
+# Ollama configuration for embeddings
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
+OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
+OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text-v2-moe")
+
+# NER Model Configuration
+NER_MODEL_PATH = os.getenv("NER_MODEL_PATH", "models/genealogy_ner_20250920_150219")
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 

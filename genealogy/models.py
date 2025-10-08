@@ -1,7 +1,11 @@
 import uuid
 
+from django.contrib.postgres.fields import ArrayField
+from django.contrib.postgres.indexes import GinIndex
+from django.contrib.postgres.search import SearchVectorField
 from django.db import models
 from django.utils import timezone
+from pgvector.django import VectorField, IvfflatIndex
 
 from .fields import CommaSeparatedArrayField
 
@@ -386,51 +390,11 @@ class TextChunk(models.Model):
         blank=True,
         help_text="Generation header text if this chunk contains one",
     )
-    genealogy_ids = CommaSeparatedArrayField(
-        models.CharField(max_length=20),
-        default=list,
-        blank=True,
-        help_text="Corrected genealogical IDs found in this chunk " "(Enter comma-separated values: II.1.a, II.1.b)",
-    )
-
-    # Additional extracted entities for gold standard curation
-    person_names = CommaSeparatedArrayField(
-        models.CharField(max_length=100),
-        default=list,
-        blank=True,
-        help_text="Person names found in this chunk "
-        "(Enter comma-separated values: Johan van der Berg, Maria Janssen)",
-    )
-    dates = CommaSeparatedArrayField(
-        models.CharField(max_length=50),
-        default=list,
-        blank=True,
-        help_text="Dates found in this chunk " "(Enter comma-separated ISO dates: 1654-03-15, 1658-12-22)",
-    )
-    places = CommaSeparatedArrayField(
-        models.CharField(max_length=100),
-        default=list,
-        blank=True,
-        help_text="Places found in this chunk " "(Enter comma-separated values: Amsterdam, Utrecht, Haarlem)",
-    )
     family_groups = CommaSeparatedArrayField(
         models.CharField(max_length=100),
         default=list,
         blank=True,
         help_text="Family group headers found in this chunk " "(Enter comma-separated values: II.9. Children of...)",
-    )
-    occupations = CommaSeparatedArrayField(
-        models.CharField(max_length=100),
-        default=list,
-        blank=True,
-        help_text="Occupations found in this chunk " "(Enter comma-separated values: metselaar, kuiper, dienstmeid)",
-    )
-    source_citations = CommaSeparatedArrayField(
-        models.CharField(max_length=200),
-        default=list,
-        blank=True,
-        help_text="Source citations (Bronverwijzing) found in this chunk "
-        "(Enter comma-separated values: RGV SSANO 16.3 Bevolkingsregister Naarden 1850-1862 dl 1 bl 156)",
     )
 
     # Relationships between chunks
@@ -461,12 +425,71 @@ class TextChunk(models.Model):
         help_text="Method used to extract genealogical anchors",
     )
 
+    # RAG + RRF fields for hybrid search
+    embedding = VectorField(
+        dimensions=1024,
+        null=True, blank=True,
+        help_text="Vector embedding for semantic search"
+    )
+    dm_codes = ArrayField(
+        models.CharField(max_length=10),
+        default=list, blank=True,
+        help_text="Daitch-Mokotoff phonetic codes for surname matching"
+    )
+
+    # Structured extraction fields (temporary staging for entity resolution)
+    extracted_people = ArrayField(
+        models.CharField(max_length=150),
+        default=list, blank=True,
+        help_text="List of person names extracted from this chunk"
+    )
+    extracted_relationships = models.JSONField(
+        default=list, blank=True,
+        help_text="Relationship triples: [{\"person1\": \"...\", \"relationship_type\": \"parent|child|spouse\", \"person2\": \"...\"}]"
+    )
+    extracted_events = models.JSONField(
+        default=list, blank=True,
+        help_text="Events: [{\"person\": \"...\", \"event_type\": \"BIRT|DEAT|MARR|etc\", \"date\": \"...\", \"place\": \"...\"}]"
+    )
+
+    # Anchor positioning for chunk expansion
+    doc_id = models.CharField(
+        max_length=100, blank=True,
+        help_text="Document identifier for chunk grouping"
+    )
+    chunk_no = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Sequential chunk number within doc_id"
+    )
+
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["document", "sequence_number"]
         unique_together = ["document", "sequence_number"]
+        indexes = [
+            # RAG + RRF indexes for hybrid search
+            IvfflatIndex(
+                name="textchunk_embedding_ivfflat",
+                fields=["embedding"],
+                lists=100,
+                opclasses=["vector_cosine_ops"]
+            ),
+            GinIndex(
+                fields=["text_content"],
+                name="textchunk_content_gin_trgm",
+                opclasses=["gin_trgm_ops"]
+            ),
+            GinIndex(
+                fields=["dm_codes"],
+                name="textchunk_dm_codes_gin"
+            ),
+            models.Index(
+                fields=["doc_id", "chunk_no"],
+                name="textchunk_doc_chunk_idx"
+            ),
+        ]
 
     def __str__(self):
         chunk_preview = self.text_content[:50] + "..." if len(self.text_content) > 50 else self.text_content

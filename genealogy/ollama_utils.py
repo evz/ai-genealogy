@@ -11,10 +11,11 @@ logger = logging.getLogger(__name__)
 class OllamaClient:
     """Client for interacting with Ollama API"""
 
-    def __init__(self, host: str | None = None, port: int | None = None):
+    def __init__(self, host: str | None = None, port: int | None = None, timeout: int = 120):
         self.host = host or os.getenv("OLLAMA_HOST", "localhost")
         self.port = port or int(os.getenv("OLLAMA_PORT", "11434"))
         self.base_url = f"http://{self.host}:{self.port}"
+        self.timeout = timeout
 
     def is_available(self) -> bool:
         """Check if Ollama server is available"""
@@ -110,7 +111,7 @@ class OllamaClient:
         try:
             payload = {"model": model, "prompt": prompt, "stream": False, **kwargs}
 
-            response = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=120)
+            response = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=self.timeout)
 
             if response.status_code == 200:
                 result = response.json()
@@ -146,8 +147,3 @@ def get_default_models() -> dict[str, str]:
         "llm_model": os.getenv("OLLAMA_LLM_MODEL", "aya:35b-23"),
         "embedding_model": os.getenv("OLLAMA_EMBEDDING_MODEL", "zylonai/multilingual-e5-large:latest"),
     }
-
-
-def get_ollama_client() -> OllamaClient:
-    """Get configured Ollama client instance"""
-    return OllamaClient()

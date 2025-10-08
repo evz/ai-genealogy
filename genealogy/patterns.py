@@ -12,14 +12,14 @@ class GenealogyPatterns:
     """Compiled regex patterns for genealogical entity extraction"""
 
     # Genealogical IDs: II.1.a, XII.5.b, etc.
-    # Handles standard format, OCR corrupted formats, and spaced variants
+    # Handles standard format, OCR corrupted formats (I/l confusion), and spaced variants
     GENEALOGY_ID = re.compile(
         r"\b(?:"
-        r"([IVXLCDMilvxlcdm]+)\.(\d+)\.([a-zA-Z])"
+        r"([IVXLCDMilvxlcdm1|]+)\.(\d+)\.([a-zA-Z])"
         r"|"
-        r"([A-Z]{1,4}[LI]+)\.(\d+)\.([a-zA-Z])"
+        r"([A-Z]{1,4}[LIl1|]+)\.(\d+)\.([a-zA-Z])"
         r"|"
-        r"([IVXLCDMilvxlcdm]+)\.\s*(\d+)\.\s*([a-zA-Z])"
+        r"([IVXLCDMilvxlcdm1|]+)\.\s*(\d+)\.\s*([a-zA-Z])"
         r")\b"
     )
 

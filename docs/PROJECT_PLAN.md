@@ -136,19 +136,65 @@ Based on lessons learned from previous over-engineered attempt:
 
 #### 🔄 Advanced Extraction Methods Implemented:
 
-5. **Neural Network Named Entity Recognition (NER)**
-   - Named Entity Recognition (NER): machine learning approach to identify and classify genealogical entities in text
-   - Custom BIO (Beginning-Inside-Outside) tagging scheme for entities: PERSON_NAME, DATE, PLACE, GENEALOGY_ID, FAMILY_GROUP
-   - BERT-based (Bidirectional Encoder Representations from Transformers) architecture fine-tuned for Dutch/English genealogy text
-   - Achieved 96.84% overall F1 score (harmonic mean of precision and recall) across all entity types
-   - Training data generation from existing regex extractions with quality validation and manual review
-   - Confidence-based filtering (0.9+ threshold) for production deployment
+5. **Named Entity Recognition (NER) Development Iterations - EVALUATED & DISCONTINUED**
 
-6. **Dual Extraction Pipeline with Method Tracking**
-   - Hybrid approach: traditional regex patterns + neural network NER processing
-   - Extraction method tracking in database for performance comparison and validation
-   - Visual admin interface to compare regex vs. neural network results side-by-side
-   - Fallback logic: neural network primary, regex backup for low-confidence predictions
+   **5.1 Original NER Model (Baseline Failure)**
+   - **Training Data**: Short CoNLL segments (~42 characters average)
+   - **Performance**: Failed catastrophically on real genealogical text (~653 characters average)
+   - **Specific Failure**: Could not extract obvious entities like "Gerrit van Santen"
+   - **Root Cause**: Training-production data mismatch - "garbage in, garbage out"
+   - **Outcome**: Led to complete training data regeneration strategy
+
+   **5.2 Interactive Human Labeling Approach**
+   - **Implementation**: `genealogy/management/commands/interactive_labeling.py`
+   - **Method**: Manual human verification with precise tokenization display
+   - **Output**: 40 high-quality human-verified examples with proper BIO labeling
+   - **Innovation**: Exact token visualization for precise entity boundary mapping
+   - **Quality**: High precision but limited scale due to manual effort
+
+   **5.3 Automated Pattern-Based Labeling**
+   - **Implementation**: `genealogy/management/commands/auto_label_chunks.py`
+   - **Method**: "Intelligent" pattern matching using Dutch genealogical knowledge
+   - **Output**: 300 training examples covering genealogical name patterns and contexts
+   - **Critical Insight**: User feedback - "not actually as intelligent as I had hoped. you're more or less just using regexes"
+   - **Limitation**: Sophisticated pattern matching, but not true language understanding
+
+   **5.4 Anthropic API Integration (Blocked)**
+   - **Implementation**: `api_intelligent_labeling.py` using Claude API
+   - **Goal**: Apply actual LLM reasoning for genuine language understanding
+   - **Failure Point**: Insufficient API credits prevented execution
+   - **Would Have Provided**: True contextual entity extraction vs pattern matching
+
+   **5.5 Ollama LLM Training Data Generation (Successful)**
+   - **Implementation**: `ollama_intelligent_labeling.py` using aya:35b-23
+   - **Method**: Local LLM reasoning for entity extraction with structured JSON output
+   - **Output**: 205+ high-quality training examples with genuine language understanding
+   - **Performance**: Excellent entity identification on actual genealogical text
+   - **Entity Coverage**: All 6 types (PERSON, DATE, PLACE, OCCUPATION, FAMILY_GROUP, SOURCE_CITATION)
+
+   **5.6 Comprehensive Training Dataset Assembly**
+   - **Combination**: 40 human + 205 LLM + 58 zero-entity negative examples
+   - **Total**: 303 examples with proper positive/negative balance (19.1% negative ratio)
+   - **Quality**: High-quality training data with actual language understanding labels
+   - **CoNLL Format**: Converted to proper training format in `training_data/complete_genealogy_ner_20250923_091339/`
+
+   **5.7 Final NER Model Training & Evaluation (Critical Failure)**
+   - **Trained Model**: `models/genealogy_ner_20250923_091959`
+   - **Architecture**: BERT-based transformer fine-tuned on high-quality genealogical data
+   - **Performance Results**:
+     * Overall F1: 19.3%
+     * Macro Recall: 12.3% (missing 87% of entities)
+     * Macro Precision: 52.0% (conservative but accurate when predicting)
+     * Zero performance on FAMILY_GROUP and SOURCE_CITATION entities
+   - **Critical Insight**: Even with excellent training data, traditional NER cannot handle genealogical complexity
+   - **Final Decision**: Complete discontinuation of NER approach
+
+6. **Large Language Model Entity Extraction - PRODUCTION APPROACH**
+   - **Proven Performance**: aya:35b-23 demonstrated excellent entity extraction on actual genealogical text
+   - **Comprehensive Coverage**: Successfully extracts all 6 entity types (PERSON, DATE, PLACE, OCCUPATION, FAMILY_GROUP, SOURCE_CITATION)
+   - **Context Understanding**: Handles Dutch naming conventions, genealogical relationships, and document structure
+   - **Quality Validation**: Interactive extraction tool with human approval workflow
+   - **Production Ready**: Direct integration with TextChunk model fields for entity storage
 
 7. **DocLayout-YOLO OCR Pipeline**
    - Modular three-component architecture: RotationDetector, DocumentLayoutDetector, RegionOCRProcessor
@@ -306,6 +352,7 @@ make shell       # Django shell access
 ### 4. **RAG Foundation & Query System**
 - Embedding generation pipeline for semantic search capabilities
 - Vector search implementation with pgvector for genealogical queries
+- **Query expansion with small models**: Use qwen2.5:7b to generate 5 query variants (EN/NL, spelling variants, abbreviations) for multi-query retrieval with RRF fusion
 - **Estimated effort**: 2-3 sessions once extraction pipeline is stabilized
 
 ## Data Examples
