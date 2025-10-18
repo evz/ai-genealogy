@@ -75,6 +75,24 @@ Resolves duplicate person records across multiple text mentions using combined a
 - [docs/DESIGN_LESSONS_LEARNED.md](docs/DESIGN_LESSONS_LEARNED.md) - Architecture lessons
 - [docs/TESTING_LESSONS_LEARNED.md](docs/TESTING_LESSONS_LEARNED.md) - Testing failures and solutions
 
+## References
+
+### Document Layout Analysis & OCR
+
+1. Zhao, Z., Kang, H., Wang, B., & He, C. (2024). "DocLayout-YOLO: Enhancing Document Layout Analysis through Diverse Synthetic Data and Global-to-Local Adaptive Perception." arXiv:2410.12628.
+
+2. Ptak, R., Zygadlo, B., Unold, O. (2017). "Projection–Based Text Line Segmentation with a Variable Threshold." *International Journal of Applied Mathematics and Computer Science*, 27:195-206.
+
+3. Dos Santos, R., Clemente, G., Ren, T., Calvalcanti, G. (2009). "Text Line Segmentation Based on Morphology and Histogram Projection."
+
+4. Schneider, P., Maurer, Y. (2020). "Rerunning OCR: A Machine Learning Approach to Quality Assessment and Enhancement Prediction." National Library of Luxembourg.
+
+### Entity Resolution
+
+5. Kirielle, N., Nanayakkara, C., Christen, P., Dibben, C., Williamson, L., Garrett, E., & Manson, C. (2022). "Unsupervised Graph-based Entity Resolution for Accurate and Efficient Family Pedigree Search."
+
+6. Fu, J., Tang, H., Khan, A., Mehrotra, S., Ke, X., & Gao, Y. (2025). "In-context Clustering-based Entity Resolution with Large Language Models: A Design Space Exploration." arXiv:2506.02509v1.
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.

@@ -433,25 +433,31 @@ class PotentialDuplicateAdmin(admin.ModelAdmin):
 
                     # Copy parent relationships to canonical
                     for rel in source_person.parent_relationships.all():
+                        # Use canonical entity if parent has been merged, otherwise use original
+                        parent_to_use = rel.parent.canonical_entity if rel.parent.canonical_entity else rel.parent
+
                         # Check if canonical already has this parent
                         if not ParentChildRelationship.objects.filter(
-                            child=canonical_person, parent=rel.parent
+                            child=canonical_person, parent=parent_to_use
                         ).exists():
                             ParentChildRelationship.objects.create(
                                 child=canonical_person,
-                                parent=rel.parent,
+                                parent=parent_to_use,
                                 relationship_type=rel.relationship_type,
                                 partnership=rel.partnership
                             )
 
                     # Copy child relationships to canonical
                     for rel in source_person.child_relationships.all():
+                        # Use canonical entity if child has been merged, otherwise use original
+                        child_to_use = rel.child.canonical_entity if rel.child.canonical_entity else rel.child
+
                         if not ParentChildRelationship.objects.filter(
-                            parent=canonical_person, child=rel.child
+                            parent=canonical_person, child=child_to_use
                         ).exists():
                             ParentChildRelationship.objects.create(
                                 parent=canonical_person,
-                                child=rel.child,
+                                child=child_to_use,
                                 relationship_type=rel.relationship_type,
                                 partnership=rel.partnership
                             )
@@ -459,7 +465,12 @@ class PotentialDuplicateAdmin(admin.ModelAdmin):
                     # Copy partnerships to canonical
                     for partnership in source_person.partnerships.all():
                         # Get the other partner(s) in this partnership
-                        other_partners = [p for p in partnership.partners.all() if p.id != source_person.id]
+                        # Use canonical entities if partners have been merged
+                        other_partners = []
+                        for p in partnership.partners.all():
+                            if p.id != source_person.id:
+                                partner_to_use = p.canonical_entity if p.canonical_entity else p
+                                other_partners.append(partner_to_use)
 
                         # Check if canonical already has a partnership with these same partners
                         existing_partnership = None

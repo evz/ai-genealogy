@@ -5,7 +5,7 @@ from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.html import format_html
 
-from ..models import Person, ParentChildRelationship, PotentialDuplicate
+from ..models import Person, ParentChildRelationship, PotentialDuplicate, EntityMerge
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class PersonAdmin(admin.ModelAdmin):
     ]
     list_filter = ["gender", "generation"]
     search_fields = ["given_names", "surname", "maiden_name", "genealogical_id"]
-    readonly_fields = ["id", "created_at", "updated_at", "source_chunk_links", "source_document_links", "events_display", "relationships_display"]
+    readonly_fields = ["id", "created_at", "updated_at", "source_chunk_links", "source_document_links", "events_display", "relationships_display", "entity_provenance_display"]
     actions = ["merge_selected_persons"]
 
     fieldsets = (
@@ -36,6 +36,13 @@ class PersonAdmin(admin.ModelAdmin):
                     "generation",
                     "genealogical_id",
                 ),
+            },
+        ),
+        (
+            "Entity Provenance",
+            {
+                "fields": ("entity_provenance_display",),
+                "description": "Shows the merge history for canonical entities",
             },
         ),
         (
@@ -265,6 +272,99 @@ class PersonAdmin(admin.ModelAdmin):
         return ", ".join([c.full_name for c in children])
 
     children_display.short_description = 'Children'
+
+    def entity_provenance_display(self, obj):
+        """Display merge provenance for canonical entities"""
+        if not obj.pk:
+            return "—"
+
+        # Check if this is a canonical entity
+        if obj.entity_type != 'CANONICAL':
+            # Check if this entity has been merged into a canonical entity
+            if obj.canonical_entity:
+                canonical_url = reverse('admin:genealogy_person_change', args=[obj.canonical_entity.id])
+                return format_html(
+                    '<div style="padding: 10px; background: #fff3cd; border: 2px solid #ff9800; border-radius: 5px;">'
+                    '<strong>⚠ This is an EXTRACTED entity that has been merged into:</strong><br>'
+                    '<a href="{}" target="_blank" style="font-size: 1.1em;">{}</a>'
+                    '</div>',
+                    canonical_url,
+                    obj.canonical_entity.full_name
+                )
+            else:
+                return format_html(
+                    '<div style="padding: 10px; background: #e3f2fd; border: 1px solid #2196f3; border-radius: 5px;">'
+                    'This is an EXTRACTED entity (not yet merged)'
+                    '</div>'
+                )
+
+        # This is a canonical entity - show what was merged into it
+        source_merges = EntityMerge.objects.filter(
+            canonical_entity=obj
+        ).select_related('source_entity').order_by('merged_at')
+
+        if not source_merges.exists():
+            return format_html(
+                '<div style="padding: 10px; background: #f3e5f5; border: 1px solid #9c27b0; border-radius: 5px;">'
+                'This is a CANONICAL entity (no merge history found)'
+                '</div>'
+            )
+
+        html = []
+        html.append(
+            '<div style="padding: 15px; background: #e8f5e9; border: 2px solid #4caf50; border-radius: 5px; margin-bottom: 15px;">'
+            '<strong style="font-size: 1.2em;">✓ This is a CANONICAL entity</strong><br>'
+            f'<small>Merged from {source_merges.count()} source entities</small>'
+            '</div>'
+        )
+
+        html.append('<div style="margin-top: 10px;">')
+        html.append('<h4 style="margin: 10px 0; color: #666;">Source Entities Merged:</h4>')
+        html.append('<table style="width: 100%; border-collapse: collapse; margin-top: 10px;">')
+        html.append(
+            '<tr style="background: #f5f5f5;">'
+            '<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Source Entity</th>'
+            '<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Confidence</th>'
+            '<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Merged By</th>'
+            '<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Merged At</th>'
+            '<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Pairwise Similarities</th>'
+            '</tr>'
+        )
+
+        for merge in source_merges:
+            source_url = reverse('admin:genealogy_person_change', args=[merge.source_entity.id])
+
+            # Format pairwise similarities
+            pairwise_html = []
+            if merge.pairwise_similarities:
+                for other_id, confidence in merge.pairwise_similarities.items():
+                    try:
+                        other_person = Person.objects.get(id=other_id)
+                        other_url = reverse('admin:genealogy_person_change', args=[other_person.id])
+                        pairwise_html.append(f'<a href="{other_url}" target="_blank">{other_person.full_name}</a>: {confidence:.1f}%')
+                    except Person.DoesNotExist:
+                        pairwise_html.append(f'Person {other_id[:8]}...: {confidence:.1f}%')
+            pairwise_display = '<br>'.join(pairwise_html) if pairwise_html else '—'
+
+            html.append(
+                f'<tr>'
+                f'<td style="padding: 8px; border: 1px solid #ddd;">'
+                f'<a href="{source_url}" target="_blank">{merge.source_entity.full_name}</a><br>'
+                f'<small style="color: #666;">ID: {str(merge.source_entity.id)[:8]}...</small>'
+                f'</td>'
+                f'<td style="padding: 8px; border: 1px solid #ddd;">{merge.confidence_score:.1f}%</td>'
+                f'<td style="padding: 8px; border: 1px solid #ddd;">{merge.merged_by}</td>'
+                f'<td style="padding: 8px; border: 1px solid #ddd;">{merge.merged_at.strftime("%Y-%m-%d %H:%M")}</td>'
+                f'<td style="padding: 8px; border: 1px solid #ddd; font-size: 0.9em;">{pairwise_display}</td>'
+                f'</tr>'
+            )
+
+        html.append('</table>')
+        html.append('</div>')
+
+        return format_html(''.join(html))
+
+    entity_provenance_display.short_description = 'Entity Merge Provenance'
 
     def merge_selected_persons(self, request, queryset):
         """Manually merge two selected persons"""
