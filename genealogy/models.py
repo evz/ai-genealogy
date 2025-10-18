@@ -57,19 +57,6 @@ class Document(models.Model):
             self.ocr_completed = True
             self.save(update_fields=["ocr_completed"])
 
-    def start_genealogy_extraction(self):
-        """Start genealogy data extraction for this document"""
-        if not self.ocr_completed:
-            raise ValueError("OCR must be completed before extraction")
-
-        if self.extraction_completed:
-            return None
-
-        # TODO: Trigger Celery extraction task
-
-        # For now, just mark as started
-        return f"extraction-task-{self.id}"
-
     def can_process_ocr(self):
         """Check if document has pages ready for OCR processing"""
         return bool(self.pages.exists() and not self.ocr_completed and self.pages.filter(ocr_completed=False).exists())
@@ -186,26 +173,62 @@ class Person(models.Model):
         ("O", "Other"),
     ]
 
+    ENTITY_TYPE_CHOICES = [
+        ('EXTRACTED', 'Original Extracted Entity'),
+        ('CANONICAL', 'Merged Canonical Entity'),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     given_names = models.CharField(max_length=255)
     surname = models.CharField(max_length=255)
     maiden_name = models.CharField(max_length=255, blank=True, help_text="Previous surname if changed")
     gender = models.CharField(max_length=1, choices=GENDER_CHOICES, default="U")
 
-    # Life events
-    birth_date = models.DateField(null=True, blank=True)
-    birth_date_estimated = models.BooleanField(default=False)
-    birth_place = models.ForeignKey(Place, on_delete=models.SET_NULL, null=True, blank=True, related_name="births")
-
-    death_date = models.DateField(null=True, blank=True)
-    death_date_estimated = models.BooleanField(default=False)
-    death_place = models.ForeignKey(Place, on_delete=models.SET_NULL, null=True, blank=True, related_name="deaths")
-
     # Genealogical identifiers (from Dutch family books)
     genealogical_id = models.CharField(max_length=50, blank=True, help_text="e.g., II.1.a")
+    generation = models.PositiveIntegerField(null=True, blank=True, help_text="Generation number (I=1, II=2, etc.)")
+
+    # Entity resolution tracking
+    entity_type = models.CharField(
+        max_length=20,
+        choices=ENTITY_TYPE_CHOICES,
+        default='EXTRACTED',
+        help_text="Whether this is an original extraction or a merged canonical entity"
+    )
+
+    # For EXTRACTED entities that have been merged: points to their canonical version
+    # For CANONICAL entities: should be NULL
+    canonical_entity = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='source_entities',
+        help_text="The canonical entity this record was merged into (NULL if not merged)"
+    )
+
+    # Many-to-many relationship for tracking merge composition via EntityMerge through model
+    merged_from = models.ManyToManyField(
+        'self',
+        through='EntityMerge',
+        symmetrical=False,
+        related_name='merged_into',
+        blank=True,
+        help_text="For CANONICAL entities: the source entities that were merged to create this"
+    )
 
     # Source tracking
     source_documents = models.ManyToManyField(Document, blank=True, related_name="persons")
+    source_chunks = models.ManyToManyField('TextChunk', blank=True, related_name="persons")
+
+    # Duplicate detection - self-referential many-to-many for tracking potential duplicates
+    potential_duplicates = models.ManyToManyField(
+        'self',
+        through='PotentialDuplicate',
+        symmetrical=False,
+        related_name='duplicate_of',
+        blank=True
+    )
 
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
@@ -222,6 +245,124 @@ class Person(models.Model):
     @property
     def full_name(self):
         return str(self)
+
+
+class PotentialDuplicate(models.Model):
+    """Through model for tracking potential duplicate persons"""
+
+    REVIEW_STATUS_CHOICES = [
+        ('PENDING', 'Pending Review'),
+        ('CONFIRMED', 'Confirmed Duplicate - Needs Merge'),
+        ('REJECTED', 'Not a Duplicate'),
+        ('MERGED', 'Already Merged'),
+    ]
+
+    person1 = models.ForeignKey(Person, on_delete=models.CASCADE, related_name='duplicate_links_from')
+    person2 = models.ForeignKey(Person, on_delete=models.CASCADE, related_name='duplicate_links_to')
+
+    # Matching metadata
+    confidence_score = models.FloatField(
+        help_text="Matching confidence score (0-100). Higher = more likely duplicate"
+    )
+    match_reasons = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of matching signals: ['same_generation', 'same_parents', 'similar_name', etc.]"
+    )
+
+    # Review tracking
+    review_status = models.CharField(
+        max_length=20,
+        choices=REVIEW_STATUS_CHOICES,
+        default='PENDING'
+    )
+    reviewed_by = models.CharField(max_length=100, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    review_notes = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        unique_together = ['person1', 'person2']
+        ordering = ['-confidence_score', 'review_status']
+
+    def __str__(self):
+        return f"{self.person1.full_name} ≈ {self.person2.full_name} ({self.confidence_score:.0f}%)"
+
+
+class EntityMerge(models.Model):
+    """
+    Through model tracking the composition of merged canonical entities.
+
+    Records the provenance of entity resolution: which source entities were
+    merged together to create a canonical entity, along with merge metadata.
+
+    Each record represents one source entity being merged into the canonical entity,
+    with pairwise confidence scores and detailed provenance tracking.
+    """
+
+    # The canonical (merged) entity that was created
+    canonical_entity = models.ForeignKey(
+        Person,
+        on_delete=models.CASCADE,
+        related_name='merge_sources',
+        help_text="The canonical entity created from merging"
+    )
+
+    # The source entity that was merged into the canonical entity
+    source_entity = models.ForeignKey(
+        Person,
+        on_delete=models.CASCADE,
+        related_name='merge_targets',
+        help_text="The source entity that was merged"
+    )
+
+    # Merge metadata - pairwise between canonical and this source
+    confidence_score = models.FloatField(
+        help_text="Pairwise confidence score for merging this source into canonical (0-100)"
+    )
+
+    # Store all pairwise similarities within the cluster for full auditability
+    pairwise_similarities = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Dict of {other_source_entity_id: confidence_score} for all pairs in cluster"
+    )
+
+    merge_algorithm = models.CharField(
+        max_length=50,
+        default='manual',
+        help_text="Algorithm or method used for merge (e.g., 'graph_clustering_v1', 'manual')"
+    )
+
+    merge_reason = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Detailed merge provenance: matching signals, cluster info, atomic similarities, etc."
+    )
+
+    # Attribution
+    merged_by = models.CharField(
+        max_length=100,
+        default='AUTO',
+        help_text="Who/what performed the merge: username or 'AUTO'"
+    )
+
+    merged_at = models.DateTimeField(
+        default=timezone.now,
+        help_text="When this merge occurred"
+    )
+
+    class Meta:
+        unique_together = ['canonical_entity', 'source_entity']
+        ordering = ['-merged_at']
+        indexes = [
+            models.Index(fields=['canonical_entity', '-merged_at']),
+            models.Index(fields=['source_entity']),
+        ]
+
+    def __str__(self):
+        return f"{self.source_entity.full_name} → {self.canonical_entity.full_name} ({self.confidence_score:.0f}%, {self.merged_at.strftime('%Y-%m-%d')})"
 
 
 class Partnership(models.Model):
@@ -366,6 +507,10 @@ class TextChunk(models.Model):
         ("NARRATIVE_CONTEXT", "Related Context/Story"),
         ("CONTENT", "General Genealogy Content"),
         ("INDEX", "Index/Reference"),
+        ("KWARTIERSTATEN_HEADER", "Kwartierstaten Section Header"),
+        ("KWARTIERSTATEN", "Kwartierstaten Content"),
+        ("APPENDIX_HEADER", "Appendix/Register Header"),
+        ("APPENDIX", "Appendix/Register Content"),
         ("OTHER", "Other"),
     ]
 
@@ -374,7 +519,7 @@ class TextChunk(models.Model):
 
     # Content
     text_content = models.TextField(help_text="The actual text content of this chunk")
-    chunk_type = models.CharField(max_length=20, choices=CHUNK_TYPES, default="CONTENT")
+    chunk_type = models.CharField(max_length=30, choices=CHUNK_TYPES, default="CONTENT")
 
     # Position information
     start_page = models.PositiveIntegerField(help_text="First page number this chunk appears on")

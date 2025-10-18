@@ -1,0 +1,384 @@
+import logging
+
+from django.contrib import admin, messages
+from django.urls import reverse
+from django.utils.html import format_html
+
+from ..models import TextChunk, Person, Event, ParentChildRelationship
+from ..ollama_utils import OllamaClient, get_default_models
+from ..tasks import extract_entities_from_chunk
+
+logger = logging.getLogger(__name__)
+
+
+@admin.register(TextChunk)
+class TextChunkAdmin(admin.ModelAdmin):
+    list_display = [
+        "__str__",
+        "document",
+        "chunk_type",
+        "sequence_number",
+        "generation_number",
+        "char_count",
+        "token_count",
+    ]
+    list_filter = [
+        "chunk_type",
+        "extraction_method",
+        "manually_reviewed",
+        "entities_extracted",
+        "generation_number",
+        "document",
+    ]
+    search_fields = ["text_content", "generation_header"]
+    readonly_fields = [
+        "id", "created_at", "updated_at", "document", "chunk_type", "sequence_number",
+        "start_page", "end_page", "entities_extracted", "generation_number",
+        "generation_header", "family_groups", "text_content", "extraction_method",
+        "formatted_people", "formatted_relationships", "formatted_events",
+        "created_persons_display", "created_events_display", "created_relationships_display"
+    ]
+    actions = ["reextract_entities"]
+
+    fieldsets = (
+        (
+            "Basic Information",
+            {
+                "fields": (
+                    "document",
+                    "chunk_type",
+                    "sequence_number",
+                ),
+            },
+        ),
+        (
+            "Position",
+            {
+                "fields": ("start_page", "end_page"),
+            },
+        ),
+        (
+            "Genealogical Anchors",
+            {
+                "fields": (
+                    "entities_extracted",
+                    "generation_number",
+                    "generation_header",
+                    "family_groups",
+                ),
+                "description": "Genealogical context for this chunk.",
+            },
+        ),
+        (
+            "Structured Extraction (Graph Data)",
+            {
+                "fields": ("formatted_people", "formatted_relationships", "formatted_events"),
+                "description": "Structured person and relationship data extracted by LLM for graph building.",
+            },
+        ),
+        (
+            "Created Entities (Database Records)",
+            {
+                "fields": ("created_persons_display", "created_events_display", "created_relationships_display"),
+                "description": "Links to actual Person, Event, and Relationship records created from this chunk.",
+            },
+        ),
+        (
+            "Content",
+            {
+                "fields": ("text_content",),
+            },
+        ),
+        (
+            "Metadata",
+            {
+                "fields": ("id", "created_at", "updated_at"),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+
+    def char_count(self, obj: TextChunk) -> str:
+        """Display character count"""
+        count = len(obj.text_content)
+        return f"{count:,}"
+
+    char_count.short_description = "Chars"  # type: ignore
+
+    def token_count(self, obj: TextChunk) -> str:
+        """Display approximate token count (chars / 4)"""
+        count = len(obj.text_content) // 4
+        return f"~{count:,}"
+
+    token_count.short_description = "Tokens"  # type: ignore
+
+    def formatted_people(self, obj: TextChunk) -> str:
+        """Display extracted people in a readable format"""
+        if not obj.extracted_people:
+            return format_html('<em>No people extracted yet</em>')
+
+        html_parts = []
+        for i, person_name in enumerate(obj.extracted_people, 1):
+            html_parts.append(f"{i}. <strong>{person_name}</strong>")
+
+        return format_html("<br>".join(html_parts))
+
+    formatted_people.short_description = "Extracted People"  # type: ignore
+
+    def formatted_relationships(self, obj: TextChunk) -> str:
+        """Display extracted relationships in a readable format"""
+        if not obj.extracted_relationships:
+            return format_html('<em>No relationships extracted yet</em>')
+
+        html_parts = []
+        for i, rel in enumerate(obj.extracted_relationships, 1):
+            person1 = rel.get('person1', 'Unknown')
+            person2 = rel.get('person2', 'Unknown')
+            rel_type = rel.get('relationship_type', 'unknown')
+
+            html_parts.append(
+                f"<strong>{i}.</strong> {person1} → <em>{rel_type}</em> → {person2}"
+            )
+
+        return format_html("<br>".join(html_parts))
+
+    formatted_relationships.short_description = "Extracted Relationships"  # type: ignore
+
+    def formatted_events(self, obj: TextChunk) -> str:
+        """Display extracted events in a readable format"""
+        if not obj.extracted_events:
+            return format_html('<em>No events extracted yet</em>')
+
+        html_parts = []
+        for i, event in enumerate(obj.extracted_events, 1):
+            person = event.get('person', 'Unknown')
+            event_type = event.get('event_type', 'UNKNOWN')
+            date = event.get('date', '')
+            place = event.get('place', '')
+
+            parts = [f"<strong>{i}.</strong> {person}"]
+            parts.append(f"<span style='color: #0066cc;'>{event_type}</span>")
+
+            if date:
+                parts.append(f"on {date}")
+            if place:
+                parts.append(f"in {place}")
+
+            html_parts.append(" ".join(parts))
+
+        return format_html("<br>".join(html_parts))
+
+    formatted_events.short_description = "Extracted Events"  # type: ignore
+
+    def created_persons_display(self, obj: TextChunk) -> str:
+        """Display links to Person records created from this chunk"""
+        if not obj.pk:
+            return "—"
+
+        persons = Person.objects.filter(source_chunks=obj).order_by('generation', 'given_names', 'surname')
+
+        if not persons:
+            return format_html('<em style="color: #999;">No persons created yet</em>')
+
+        html = []
+        html.append(f'<div style="margin-bottom: 10px;"><strong>Total: {persons.count()} persons</strong></div>')
+        html.append('<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px;">')
+
+        for person in persons:
+            person_url = reverse('admin:genealogy_person_change', args=[person.id])
+            html.append(
+                f'<div style="padding: 8px; border: 1px solid #0066cc; border-radius: 4px; background: #e3f2fd;">'
+                f'<a href="{person_url}" target="_blank" style="font-weight: bold; color: #0066cc;">{person.full_name}</a><br>'
+                f'<small style="color: #666;">Gen {person.generation or "?"}</small>'
+                f'</div>'
+            )
+
+        html.append('</div>')
+        return format_html(''.join(html))
+
+    created_persons_display.short_description = "Created Persons"  # type: ignore
+
+    def created_events_display(self, obj: TextChunk) -> str:
+        """Display links to Event records created from persons in this chunk"""
+        if not obj.pk:
+            return "—"
+
+        # Get all persons from this chunk
+        persons = Person.objects.filter(source_chunks=obj)
+
+        if not persons:
+            return format_html('<em style="color: #999;">No persons from this chunk</em>')
+
+        # Get events for these persons
+        events = Event.objects.filter(person__in=persons).select_related('person', 'place').order_by('person__given_names', 'event_type')
+
+        if not events:
+            return format_html('<em style="color: #999;">No events created yet</em>')
+
+        html = []
+        html.append(f'<div style="margin-bottom: 10px;"><strong>Total: {events.count()} events</strong></div>')
+
+        # Group by person
+        from collections import defaultdict
+        events_by_person = defaultdict(list)
+        for event in events:
+            events_by_person[event.person].append(event)
+
+        for person, person_events in events_by_person.items():
+            person_url = reverse('admin:genealogy_person_change', args=[person.id])
+            html.append(f'<div style="margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">')
+            html.append(f'<div style="font-weight: bold; margin-bottom: 5px;"><a href="{person_url}" target="_blank" style="color: #0066cc;">{person.full_name}</a></div>')
+            html.append('<ul style="margin: 0; padding-left: 20px;">')
+
+            for event in person_events:
+                event_url = reverse('admin:genealogy_event_change', args=[event.id])
+                parts = [f'<a href="{event_url}" target="_blank" style="color: #2e7d32;">{event.event_type}</a>']
+                if event.date:
+                    parts.append(f'{event.date}')
+                if event.place:
+                    parts.append(f'in {event.place.name}')
+                html.append(f'<li>{" ".join(parts)}</li>')
+
+            html.append('</ul></div>')
+
+        return format_html(''.join(html))
+
+    created_events_display.short_description = "Created Events"  # type: ignore
+
+    def created_relationships_display(self, obj: TextChunk) -> str:
+        """Display links to ParentChildRelationship records involving persons from this chunk"""
+        if not obj.pk:
+            return "—"
+
+        # Get all persons from this chunk
+        persons = Person.objects.filter(source_chunks=obj)
+
+        if not persons:
+            return format_html('<em style="color: #999;">No persons from this chunk</em>')
+
+        person_ids = [p.id for p in persons]
+
+        # Get relationships where either parent or child is from this chunk
+        relationships = ParentChildRelationship.objects.filter(
+            child_id__in=person_ids
+        ).select_related('child', 'parent').order_by('child__given_names')
+
+        parent_relationships = ParentChildRelationship.objects.filter(
+            parent_id__in=person_ids
+        ).select_related('child', 'parent').exclude(
+            child_id__in=person_ids  # Don't duplicate relationships already shown
+        ).order_by('child__given_names')
+
+        total_count = relationships.count() + parent_relationships.count()
+
+        if total_count == 0:
+            return format_html('<em style="color: #999;">No relationships created yet</em>')
+
+        html = []
+        html.append(f'<div style="margin-bottom: 10px;"><strong>Total: {total_count} relationships</strong></div>')
+
+        # Show child relationships (person from chunk is the child)
+        if relationships:
+            html.append('<div style="margin-bottom: 15px;">')
+            html.append('<h4 style="margin: 0 0 10px 0; color: #0066cc;">As Child</h4>')
+            for rel in relationships:
+                rel_url = reverse('admin:genealogy_parentchildrelationship_change', args=[rel.id])
+                child_url = reverse('admin:genealogy_person_change', args=[rel.child.id])
+                parent_url = reverse('admin:genealogy_person_change', args=[rel.parent.id])
+
+                html.append(
+                    f'<div style="padding: 8px; margin-bottom: 5px; border-left: 3px solid #4caf50; background: #f1f8f4;">'
+                    f'<a href="{child_url}" target="_blank" style="font-weight: bold; color: #0066cc;">{rel.child.full_name}</a> '
+                    f'← <a href="{parent_url}" target="_blank" style="color: #666;">{rel.parent.full_name}</a> '
+                    f'<a href="{rel_url}" target="_blank" style="color: #999; font-size: 0.9em;">[edit]</a>'
+                    f'</div>'
+                )
+            html.append('</div>')
+
+        # Show parent relationships (person from chunk is the parent)
+        if parent_relationships:
+            html.append('<div style="margin-bottom: 15px;">')
+            html.append('<h4 style="margin: 0 0 10px 0; color: #ff9800;">As Parent</h4>')
+            for rel in parent_relationships:
+                rel_url = reverse('admin:genealogy_parentchildrelationship_change', args=[rel.id])
+                child_url = reverse('admin:genealogy_person_change', args=[rel.child.id])
+                parent_url = reverse('admin:genealogy_person_change', args=[rel.parent.id])
+
+                html.append(
+                    f'<div style="padding: 8px; margin-bottom: 5px; border-left: 3px solid #ff9800; background: #fff8f0;">'
+                    f'<a href="{parent_url}" target="_blank" style="font-weight: bold; color: #ff9800;">{rel.parent.full_name}</a> '
+                    f'→ <a href="{child_url}" target="_blank" style="color: #666;">{rel.child.full_name}</a> '
+                    f'<a href="{rel_url}" target="_blank" style="color: #999; font-size: 0.9em;">[edit]</a>'
+                    f'</div>'
+                )
+            html.append('</div>')
+
+        return format_html(''.join(html))
+
+    created_relationships_display.short_description = "Created Relationships"  # type: ignore
+
+    def has_add_permission(self, request):
+        """Disable adding text chunks through admin"""
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        """Disable editing text chunks through admin"""
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        """Disable deleting text chunks through admin"""
+        return False
+
+    def reextract_entities(self, request, queryset):
+        """Admin action: Re-run entity extraction for selected chunks"""
+        # Only process GENEALOGY_ENTRY chunks
+        chunks = queryset.filter(chunk_type="GENEALOGY_ENTRY")
+
+        if not chunks.exists():
+            self.message_user(
+                request,
+                "No GENEALOGY_ENTRY chunks selected. Only genealogy entries can be extracted.",
+                level=messages.WARNING
+            )
+            return
+
+        # Initialize Ollama client
+        ollama = OllamaClient(timeout=600)
+        if not ollama.is_available():
+            self.message_user(
+                request,
+                "Ollama server is not available. Cannot perform extraction.",
+                level=messages.ERROR
+            )
+            return
+
+        # Get model from first chunk's document or use default
+        first_chunk = chunks.first()
+        model = first_chunk.document.llm_model_used or get_default_models()["llm_model"]
+
+        success_count = 0
+        failed_count = 0
+
+        for chunk in chunks:
+            result = extract_entities_from_chunk(chunk, ollama, model)
+            if result['success']:
+                success_count += 1
+            else:
+                failed_count += 1
+
+        # Show summary message
+        if success_count > 0:
+            self.message_user(
+                request,
+                f"Successfully re-extracted {success_count} chunk(s) using {model}.",
+                level=messages.SUCCESS
+            )
+
+        if failed_count > 0:
+            self.message_user(
+                request,
+                f"Failed to extract {failed_count} chunk(s). Check logs for details.",
+                level=messages.ERROR
+            )
+
+    reextract_entities.short_description = "Re-extract entities from selected chunks"

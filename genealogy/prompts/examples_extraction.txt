@@ -1,0 +1,319 @@
+FAMILY GROUP: /.3. Kinderen van Aart van Santen en Willemijntje Zuidam (lll.2.f)
+
+CONTENT: c. Wouter van Zanten, - Gameren 9.12.1770, t Culemborg 27.8.1826, arbeider, x Everdina
+[Dina] Beijer, * Kranenburg + 1768, t Culemborg 12.1.1832, dv Wessel Beijer en Geertruida
+van Waardenburg,
+1832: Huis 222, Culemborg
+Bij de doop wordt de moeder Lijsbet van Suijdam genoemd.
+Wouter wordt ca 1812 genoemd in het bevolkingsregister van Culemborg.
+De doop van Everdina Beijer is niet gevonden. Wel wordt een zusje Maria 27.7.1760 in Amsterdam gedoopt in de kerk
+de Posthoorn (RK).
+
+INTERPRETATION: Wouter van Zanten, son of Aart van Santen and Willemijntje Zuidam was baptised in Gameren on December 9, 1770 and died in Culemborg on August 27, 1826. He was a worker. He married Everdina [Dina] Beijer who was born in Kranenburg in about 1768 and died in Culemborg on January 12, 1832. She was the daughter of Wessel Beijer and Geertruida van Waardenburg. Wouter lived at Huis 222 in Culemborg in 1832. NOTES: In his baptismal record, Wouter's mother is listed as Lijsbet van Suijdam. Wouter was listed in the population register for Culemborg in 1812. Everdina Beijer's baptismal record was not found. However, a sister, Maria, was baptised on July 7, 1760 in the Poosthorn Roman Catholic (RK) church in Amsterdam.
+
+PEOPLE:
+- Wouter van Zanten
+- Everdina Beijer
+- Aart van Santen
+- Willemijntje Zuidam
+- Wessel Beijer
+- Geertruida van Waardenburg
+
+PARENT_CHILD:
+- Wouter van Zanten|child|Aart van Santen
+- Wouter van Zanten|child|Willemijntje Zuidam
+- Everdina Beijer|child|Wessel Beijer
+- Everdina Beijer|child|Geertruida van Waardenburg
+
+PARTNERSHIPS:
+- Wouter van Zanten|spouse|Everdina Beijer
+- Wessel Beijer|spouse|Geertruida van Waardenburg
+- Aart van Santen|spouse|Willemijntje Zuidam
+
+EVENTS:
+- Wouter van Zanten|BAPT|1770-12-09|Gameren
+- Wouter van Zanten|MARR|1799-11-24|
+- Wouter van Zanten|DEAT|1826-08-27|Culemborg
+- Everdina Beijer|DEAT|1832-01-12|Culemborg
+- Wouter van Zanten|RESI|1832|Huis 222, Culemborg
+
+------
+
+FAMILY GROUP: VI.3. Kinderen van Leonardus van Zanten en Gerritje Johanna Rob (V.2.f)
+
+CONTENT: h. Marinus Wilhelmus van Zanten, * Amsterdam 18.8.1882, t Amsterdam 23.8.1883.
+=== Page 25 ===
+
+INTERPRETATION: Marinus Wilhelmus van Zanten, son of Leonardus van Zanten and Gerritje Johanna Rob was born August 18, 1882 in Amsterdam and died August 23, 1883 in Amsterdam.
+
+PEOPLE:
+- Marinus Wilhelmus van Zanten
+- Leonardus van Zanten
+- Gerritje Johanna Rob
+
+PARENT_CHILD:
+- Marinus Wilhelmus van Zanten|child|Leonardus van Zanten
+- Marinus Wilhelmus van Zanten|child|Gerritje Johanna Rob
+
+PARTNERSHIPS:
+- Leonardus van Zanten|spouse|Gerritje Johanna Rob
+
+EVENTS:
+- Marinus Wilhelmus van Zanten|BIRT|1882-08-18|Amsterdam
+- Marinus Wilhelmus van Zanten|DEAT|1883-08-23|Amsterdam
+
+------
+
+FAMILY GROUP: VI.1. Kinderen van Aart van Zanten en Anna Antonia Kappers (V.1.a)
+
+CONTENT: n. Bessel van Zanten, * Naarden 17.8.1841, t Haarlem 16.2.1911, boerenknecht (1860),
+opzichter der fortificatiën, werkman (1872), spoorwegarbeider (1895), spoorwegbeambte
+(1900), x 1. Weesp 10.5.1872 Geertruij Voorhaar wed Pieter van den Bergh, schilder, *
+Kortenhoef 6.10.1836, t Bussum 27.8.1899, dienstbode, spoorwegwachteres (1879-1884),
+dv Dirk Voorhaar en Dirkje van Leeuwen, werkster, x 2. Bussum 31.5.1900 Trijntje Anna
+Catharina Boer Rookhuijzen wed Evert de Jager, * Naarden 27.12.1838, t Vleuten, t.h.v.
+een dochter tijdens een bezoek, 10.5.1908, dv Jan Boer Rookhuijzen, spinbaas, en Anna
+Catharina van Loveren (VII.3),
+Apeldoorn; -1875; Muiderbergerweg, F 42 C, Weesp; 1875: lepenlaan 2, Bussum; Melkweg 2d. Bussum, Kapelstraat 43,
+Bussum. Cereslaan 1, Bussum; Gildestraat 24, Bussum; 1903: Bussumerstraat 236, Naarden; Turftorenstraat 309,
+omgenummerd: 53, Naarden; 1911: Wijde Geldeloozenpad 33 (het sterfhuis is: Gasthuisvest 47), Haarlem.
+Op het adres lepenlaan 2 woont in 1875 ook zoon Pieter.
+In een tijd waarin mensen meer bij hun bijnaam bekend waren dan bij de officiële naam, werd Bessel in de wandeling
+“soldaat Van Zanten” genoemd. Net als zijn oudere broer is hij, voor zijn diensttijd, werkzaam in de bouwvak.
+Beide gasthuizen waren in de 19e eeuw berucht om hun deplorabele toestanden. Met de medische
+behandeling was het ronduit slecht gesteld. De Oostenrijkse arts Joseph Speilt, die het Binnen- en
+Buitengasthuis in 1852 bezocht, schreef in zijn verslag aan het Koninklijke en Keizerlijke
+Artsengezelschap in Wenen: "Hoe moeten we deze twee verpleeginrichtingen beschrijven, die op
+geen enkele wijze die naam verdienen? Als wij bijzonderheden opsommen, blijkt als vanzelf dat ze
+het tegendeel zijn van wat ziekenhuizen behoren te zijn. (...) Op iedere buitenstaander maakt deze
+plek een hoogst onaangename indruk. Op zeshonderd zieken zijn er slechts twee artsen." Het
+verplegend personeel noemde hij een afschrikwekkend voorbeeld van ruwheid, traagheid en
+smerigheid.
+In 1867 schreven de regenten van het Binnengasthuis een rapport aan het stadsbestuur, waarin ze
+de afdeling verloskunde beschreven: "Zwangere vrouwen moeten haar dag- en nachtverblijf houden
+op sombere zolders. De verpleegkamers zijn op een andere verdieping gelegen dan de verloskamers,
+zodat de kraamvrouwen dadelijk na de bevalling een zeer moeilijke en nadelige verplaatsing moeten
+ondergaan. Voor reconvalescenten moet dienen een groot, hol, kil, kerkvormig en met stenen
+bevloerd lokaal, dat des winters voor geen behoorlijke verwarming vatbaar is. En de verloskamers
+zijn in een bouwvallig, slecht ingericht houten gebouw, dat bovendien te klein is om aan alle
+behoeften te voldoen".
+De verpleging bestond uit "knechten en meiden" die zich, volgens een rapport van het stadsbestuur
+in 1882, schuldig maakten aan drankmisbruik en mishandeling, de medicijnen verkochten en het
+voedsel voor zichzelf hielden. In reactie besloot de stad een jaar later om gediplomeerde verplegers
+in dienst te nemen.
+(Ontleend aan Wikipedia)
+=== Page 21 ===
+Bessel van Zanten en Geertruij Voorhaar. 1872.
+Dit is de oudste bekende foto met een Van Zanten.
+De foto werd door Jan Dirk van den Bergh (* Utrecht 1932), die omstreeks 1953 naar de USA geémigreerd is, door vererving
+eigenaar van de foto, voor zijn grootvader (Boudewijn van den Bergh) en grootmoeder (Magdalena Ledder) gehouden.
+Boudewijn heeft 5% maand als dienstplichtig soldaat gediend. Echter, vergelijking van het gezicht van de vrouw met foto's van
+Magdalena laat zien, dat Magdalena een veel smaller gezicht had. En vergelijking met een tamelijk beschadigde foto van
+Geertruij met haar drie eerste kinderen, toont hetzelfde gezicht.
+Bovendien staat op de foto een beroeps-onderofficier, géén dienstplichtig soldaat.
+Dit is te zien aan het model van het uniform, de fourragére (schouderlint), portepee (sabelkwast), de kepi en de sabel.
+Dienstplichtige soldaten droegen een bivakmuts (een ‘schuitie’). De kepi had 1865 de schakot vervangen. Jas met kraag en
+opslagen van donkerblauw laken met scharlakenrode biezen. De schouderpassanten hadden een visgraat-bandje als teken
+van de opzichter van fortificatién. Opzichters der derde klasse hadden één bandje, de tweede klasse had twee bandjes (lissen),
+en de eerste klass had drie bandjes (lissen). ‘De sabel is het genie-sabel M1859.
+De enige beroepsmilitair waar Geertruij mee te doen had was Bessel van Zanten. Dus kán deze foto alleen van Geertruij en
+Bessel zijn. (research van Pieter van Zanten, * 1944)
+=== Page 22 ===
+Opzichters der Fortificatiën
+Dit waren Opzichters van de Genie, die sinds 1822 nog onder het "Bataljon Mineurs en Sappeurs"
+(BMS) van de Artillerie vielen. Vanaf 1829 huisde dit Bataljon met de infanterie in Utrecht, waar ook
+de Genieschool was. Daar werd Bessel van 1866 tot 1868 tot Opzichter van Fortificatiën opgeleid. Een
+Bataljon onder het bevel van een kolonel bestond uit zo’n 800 man, ongedeeld in 4 compagnieën, die
+onder het bevel van een kapitein stonden.
+Pontonniers bouwden bruggen en voeren met schepen.
+Mineurs groeven onderaardse gangen tot onder de linies van de vijand (waren vaak ook mijnwerkers)
+en plaatsten daar explosieven (de eerste mijnen).
+Sappeurs bouwden loopgraven.
+De geniesoldaten werden toen "Sappers" of Genisten genoemd. Een ”’Sappe” is het Franse woord voor
+een loopgraaf in de richting van de vijand. Zij waren ook verantwoordelijk voor het begraven van de
+doden. Omdat geniesoldaten de enige soldaten waren, die met de bouw van een fort te doen hadden, kan
+Bessel alleen maar zo'n opzichter geweest zijn.
+Opzichters van Fortificatién waren militairen met een speciale opleiding, al was het maar omdat ze
+bouwtekeningen moesten kunnen lezen. Er waren uit drie klassen, waarmee een rang correspondeerde.
+Opzichter derde klasse waren sergeants. Opzichter tweede klasse luitenants of kapiteins en een opzichter
+eerste klasse was kolonel.
+In deze tijd kon je alleen sergeant worden wanneer je kon lezen en schrijven. Zo is aan te nemen, dat
+Bessel van 1847 tot 1852 de lagere school in Naarden bezocht heeft. Door zijn daarna opgedane ervaring
+op de bouw kwam Bessel dan prima in aanmerking voor de basisopleiding bij de Genie in Utrecht. Daar
+volgde hij na enige tijd de opleiding tot opzichter van fortificatiën. Daarbij kwamen de vakken
+bouwtekenen, statica, materiaalkunde en trigonometrie op het leerplan. Ook het gebruik van de diverse
+hulpmiddelen en instrumenten werd hem geleerd.
+In de tijd van 1868 tot 1880 werden er veel militaire bouwwerken gebouwd, omgebouwd of uitgebouwd.
+Bij de mobilisatie in 1870 bleken de forten en vestingwerken verouderd, verwaarloosd en niet op een
+mobilisatie voorbereid. Oorzaak van deze deplorabele staat van de landsverdediging waren de
+bezuinigingen in de jaren 1840 tot 1860. Een beleid dat zich voor de Tweede Wereldoorlog herhaalde.
+Politici hebben korte geheugens en zijn hardleers.
+Uit overlevering is bekend, dat Bessel in 1889 ontslag neemt uit het leger, 48 jaar oud. Waarom is niet bekend. Hij wordt
+dan overwegwachter aan de Gooiberg in Bussum. Er komen per dag wel negen treinen langs en als een trein nadert
+geeft de machinist een fluitsignaal waarop Bessel met een rode vlag en verkeer stopt zodat de trein zonder ongelukken
+kan passeren. Het spoorwegwachtershuis nr 25 is ruimer dan de meeste andere spoorweghuizen en dan arbeidershuizen,
+bovendien is er wat grond bij zodat kippen, een enkele koe of wat geiten gehouden kunnen worden, terwijl de grond ook
+groenten oplevert. Naast vrij wonen, de opbrengsten van de tuin en een uniform krijgt de spoorwegwachter f250/jaar
+(f4,80/week), bovendien is er een ziekteverzekering en een pensioenfonds! In 1903 houdt Bessel het bij de spoorwegen
+voor gezien. Misschien heeft de grote spoorwegstaking van dat jaar er iets mee te maken. Staken kon toen nog ontslag
+betekenen en bij de Hollandsche IJzeren SpoorwegMaatschappij werd 10% van het personeel ontslagen.
+Hij is waarschijnlijk met 12 jaar dus in 1853 in de bouw gegaan. In 1866 of 1867 moet Bessel dienst hebben genomen.
+Vermoedelijk door zijn ervaring in de bouw kreeg hij de kans om de opleiding tot opzichter van de fortificatién in Utrecht
+Volgens de overlevering was hij 0.m. betrokken bij het fort Werk IV in Bussum.
+Bessel krijgt in 1879 de bronzen legermedaille “Voor Langdurige, Eerlijke en Trouwe Dienst”. De medaille werd toegekend
+na 12 jaar dienst in het leger. Bij 24 dienstjaren zou het een zilveren medaille geworden zijn.
+De familie vermoedt dat hij vanaf 1903 als meester op een Lagere School in Haarlem werkte. Hij kon overdag gewoon
+op een Lagere School lesgeven, en dan in de avonduren en op zaterdag de rijkskweekschool of de normaalschool in
+Haarlem volgen (Opleiding tijdens tewerkstelling). Vroegere militairen nam men graag, omdat deze voor orde in de klas
+zorgden. De woning aan het Wijde Geldeloozenpad is in 1910 gebouwd en heeft een oppervlakte van 39 m?. De woning
+bestaat uit twee kamers (woon- en slaapkamer), een keuken, en een WC.
+Volgens familieoverlevering trekt Geertruij Voorhaar, wanneer ze op 31.5.1869 te Weesp weduwe wordt met haar drie
+kinderen, in bij haar broer in Bussum. Naar verluidt verhuurt die in dat jaar ook een kamer aan de opzichter der fortificatién,
+Bessel van Zanten. Wanneer de familieoverlevering klopt dat de zoon Bessel van Bessel sr en Geertruij Voorhaar niet in
+1877 is geboren, maar in 1870, dan hebben ze er geen gras over laten groeien.
+Geertruij Voorhaar komt voor in het personeelsregister van de Hollandsche IJzeren Spoorwegmaatschappij. Zij was daar
+=== Page 23 ===
+in dienst van 1879 tot 1884 als wachteres (standplaats bij de bus in Amersfoort). Op 18 februari 1884 is zij "wegens slecht
+gedrag" ontslagen.
+Hoewel dat uit het bevolkingsregister niet blijkt (ze blijft gewoon ingeschreven op hetzelfde adres als Bessel), vertelt de
+familie dat Geertruij in 1892 bij haar zoon Boudewijn van den Bergh woont. Ze overlijdt op het adres lepenlaan 5 in
+Bussum en dat is niet het woonadres van Bessel. Het is ook niet het adres van Bouwewijn, die woont Lindenlaan 9 in
+Bussum In het laatste Nederlandse paspoort van zoon Dirk-Pieter van den Bergh staat geschreven: “Mijn moeder is
+overleden 27 Augustus 1899 aan leverziekte begraven op woensdag 30 Augustus. Oud 61 jaar, 10 maanden.”
+De sterfdatum, van Geertruij Voorhaar scheelt één dag met die van haar kleinzoon Bessel.
+Er is geopperd dat Geertruij alcoholverslaafd was. De scheiding van haar man, het ontslag wegens slecht gedrag, het
+overlijden aan een leverziekte zou in dit beeld passen. Maar er zijn natuurlijk meer oorzaken denkbaar voor een scheiding,
+meer vormen van slecht gedrag en verschillende leverziekten. Zeker is dit dus niet. De notie komt vooral bij haar zoon
+Bessel vandaan. De beide Amerikaanse zoons ontkennen het.
+Summary
+Bessel lives in an orphanage until the age of 18. After leaving school he finds probably work in the building sector. In
+1866 or 1867 he joins the army to become a supervisor for the fortresses. In 1889 he finds new employment outside the
+army as a crossing keeper with the railways. In 1903 massive strikes disrupt the society, the firing is just as massive.
+Perhaps that is why he becomes an elementary schoolteacher in that year.
+In the first months of 1900 we find him in a home seemingly for the poor. He is employed as laborer and railway employee.
+In the population records is under religion written ‘none of the above’, just as was the case with his mother.
+Geertruij Voorhaar is employed by the railways as well, but in 1884 she is fired for bad behavior. In 1892 she and Bessel
+are living apart. In 1899 she dies from a lever condition.
+Itis claimed that Geertruij was an alcoholic. Separation, bad behavior, liver condition, it all fits the picture. But there are
+several possible reasons for separation, several kinds of bad behavior, and several liver conditions. While that notion
+seems to have been supported by son Bessel, the sons in the US don't share that idea. So there is reason for doubt.
+Bronverwijzing
+RGV SSANO 16.3 Bevolkingsregister Naarden 1850-1862 dl 1, bl 156
+Bij Bessel is in de kolom ‘Godsdienst’ ingevuld ‘tot geen der genoemde gezind hebben behoren’. Helaas worden er geer
+gezinten genoemd. Hij verlaat de gemeente op 29.2.1860 om naar Diemen te gaan.
+RGV SSANO 35.1331.59490 Weesregister
+Genoemd: Bessel van Zanten, zv Aart van Zanten en Anna Antonia Kappers, Gereformeerd, vertrokken 17.8.1859 (dus
+op de dag dat hij 18 werd, vB)
+0. Herman Daniël van Zanten, * Naarden 28.11.1842, t Naarden 29.11.1842.
+
+INTERPRETATION: Bessel van Zanten, son of Aart van Zanten and Anna Antonia Kappers, was born in Naarden on August 17, 1841 and died in Haarlem on February 16, 1911. He was a farmhand (1860), a supervisor of fortifications, a laborer (1872), a railway worker (1895) and a railway official (1900). He married Geertruij Voorhaar in Weesp on May 10, 1872. She was the widow of Pieter van den Bergh who was a painter. She was born in Kortehoef on October 6, 1836 and died in Bussum August 27, 1899. She was a servant and a railway crossing guard (1879-1884). She was the daughter of Dirk Voorhaar and Dirkje van Leeuwen who was a worker. Bessel's second marriage (x 2) was to Trijntje Anna Catharina Boer Rookhuijzen who was the widow of Evert de Jager. She was born in Naarden on December 27, 1838 and died in Vleuten at the home of a daughter during a visit on May 10, 1908. She was the daughter of Jan Boer Rookhuijzen and Anna Catharina van Loveren. Bessel lived in Appeldorn before 1875. After that he lived at Muiderbergerweg, F 42 C in Weesp. In 1875 he lived at lepenlaan 2, Bussum. He also lived at various other addresses in Bussum: Melkweg 2d. Bussum, Kapelstraat 43, Bussum, Cereslaan 1, Bussum, Gildestraat 24, Bussum. In 1903 he lived at Bussumerstraat 236 in Naarden and also at Turftorenstraat 309 (which was renumbered as 53). In 1911 he lived at Wijde Geldeloozenpad 33 in Haarlem. He died at Gasthuisvest 47 in Haarlem.
+In 1875 he lived at lepenlaan 2 in Bussum with his son Pieter.
+Herman Daniël van Zanten was born November 28, 1842 in and died November 29, 1842 in Naarden
+
+PEOPLE:
+- Bessel van Zanten
+- Aart van Zanten
+- Anna Antonia Kappers
+- Geertruij Voorhaar
+- Trijntje Anna Catharina Boer Rookhuijzen
+- Pieter van Zanten
+- Geertruij Voorhaar
+- Pieter van den Bergh
+- Dirk Voorhaar
+- Dirkje van Leeuwen
+- Trijntje Anna Catharina Boer Rookhuijzen
+- Evert de Jager
+- Jan Boer Rookhuijzen
+- Anna Catharina van Loveren
+- Boudewijn van den Bergh
+- Herman Daniel van Zanten
+
+PARENT_CHILD:
+- Bessel van Zanten|child|Aart van Zanten
+- Bessel van Zanten|child|Anna Antonia Kappers
+- Bessel van Zanten|parent|Pieter van Zanten
+- Geertruij Voorhaar|parent|Boudewijn van den Bergh
+- Geertruij Voorhaar|child|Dirk Voorhaar
+- Geertruij Voorhaar|child|Dirkje van Leeuwen
+- Trijntje Anna Catharina Boer Rookhuijzen|child|Jan Boer Rookhuijzen
+- Trijntje Anna Catharina Boer Rookhuijzen|child|Anna Catharina van Loveren
+- Herman Daniel van Zanten|child|Aart van Zanten
+- Herman Daniel van Zanten|child|Anna Antonia Kappers
+
+PARTNERSHIPS:
+- Geertruij Voorhaar|spouse|Pieter van den Bergh
+- Trijntje Anna Catharina Boer Rookhuijzen|spouse|Evert de Jager
+- Bessel van Zanten|spouse|Geertruij Voorhaar
+- Bessel van Zanten|spouse|Trijntje Anna Catharina Boer Rookhuijzen
+
+EVENTS:
+- Bessel van Zanten|BIRT|1841-08-17|Naarden
+- Bessel van Zanten|EDUC|1847-1852|Naarden
+- Bessel van Zanten|RESI|< 1859-08-17|orphanage
+- Bessel van Zanten|RESI|> 1860-02-29|Diemen
+- Bessel van Zanten|OCCU|1866-1867|Military Service
+- Bessel van Zanten|OCCU|> 1867|Fortress supervisor
+- Bessel van Zanten|RESI|> 1867|Bussum
+- Geertruij Voorhaar|RESI|> 1869-05-31|Bussum
+- Geertruij Voorhaar|OTHER|> 1869-05-31|Lives with brother
+- Geertruij Voorhaar|OTHER|1869|Rents a room to Bessel van Zanten in Bussum
+- Bessel van Zanten|MARR|1872-05-10|Weesp
+- Geertruij Voorhaar|MARR|1872-05-10|Weesp
+- Bessel van Zanten|OTHER|1879|Received bronze army medal
+- Geertruij Voorhaar|OCCU|1879-1884|Crossing guard
+- Geertruij Voorhaar|OTHER|1884-02-18|Dismissed from her job for bad behavior
+- Bessel van Zanten|OCCU|1889|Railway crossing keeper
+- Geertruij Voorhaar|RESI|1892|Lepenlaan 9, Bussum
+- Geertruij Voorhaar|OTHER|1892|Resides with son Boudewijn van den Bergh
+- Geertruij Voorhaar|DEAT|1899-08-27|Lepenlaan 5, Bussum
+- Bessel van Zanten|MARR|1900-05-31|Bussum
+- Trijntje Anna Catharina Boer Rookhuijzen|MARR|1900-05-31|Bussum
+- Bessel van Zanten|OTHER|1903|Left railway service
+- Bessel van Zanten|OCCU|1903|Primary school instructor
+- Bessel van Zanten|RESI|1903|Haarlem
+- Bessel van Zanten|DEAT|1911-02-16|Haarlem
+- Herman Daniel van Zanten|BIRT|1842-11-28|Naarden
+- Herman Daniel van Zanten|DEAT|1842-11-29|Naarden
+
+------
+
+FAMILY GROUP: lll.2. Kinderen van Arien Gerritse van Santen en Hermina Noorthoorn (ll.1.c)
+
+CONTENT: De namen van de kinderen van Gerrit van Santen en Lijske in de tweede generatie zijn vastgesteld op basis van vernoeming.
+Gaan we de vernoeming na bij de kinderen van Arién Gerritse en Hermijntje Noorthoorn, dan vinden we: vaders vader,
+moeders vader, dan vaders moeder en het eerste meisje daarna moeders moeder. De volgorde waarin de meisjes vernoemd
+zijn is dus omgedraaid. Misschien omdat Lijske nog in leven was terwijl Apollonia al was overleden?
+De eerste nieuwe naam die we tegenkomen is Aart. Wanneer het gebruik is gevolgd is dat de oudste broer van Arien, net
+zoals Jan de oudste broer van Hermina moet zijn. Het is natuurlijk niet zeker of het vernoemingsgebruik nog verder gevolgd
+is nadat de ouders vernoemd waren. We betreden hier het terrein van de speculatie.
+
+INTERPRETATION: Largely speculative musings regarding early naming conventions within the family
+
+PEOPLE: None
+
+PARENT_CHILD: None
+
+PARTNERSHIPS: None
+
+EVENTS: None
+
+------
+
+FAMILY GROUP: lll.2. Kinderen van Arien Gerritse van Santen en Hermina Noorthoorn (ll.1.c)
+
+CONTENT: j. Jan, - Haaften 20.9.1739,
+
+PEOPLE:
+- Jan van Santen
+- Arien Gerritse van Santen
+- Hermina Noorthoorn
+
+PARENT_CHILD:
+- Jan van Santen|child|Arien Gerritse van Santen
+- Jan van Santen|child|Hermina Noorthoorn
+
+PARTNERSHIPS:
+- Arien Gerritse van Santen|spouse|Hermina Noorthoorn
+
+EVENTS:
+- Jan van Santen|BAPT|1739-09-20|Haaften

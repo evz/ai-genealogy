@@ -1,0 +1,209 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}Merge Persons{% endblock %}
+
+{% block content %}
+<h1>Merge Duplicate Persons</h1>
+
+<div style="background: #f8f8f8; padding: 15px; margin-bottom: 20px; border-left: 4px solid #4CAF50;">
+    <strong>Confidence Score:</strong> {{ duplicate.confidence_score|floatformat:1 }}%<br>
+    <strong>Match Reasons:</strong>
+    {% for reason in duplicate.match_reasons %}
+        <span style="color: {% if reason == 'CONFLICTING_EVENTS' %}red{% else %}green{% endif %}; margin-right: 10px;">{{ reason }}</span>
+    {% endfor %}
+</div>
+
+<form method="post">
+    {% csrf_token %}
+
+    <h2>Select Attribute Values to Keep</h2>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+        <thead>
+            <tr style="background: #e0e0e0;">
+                <th style="padding: 10px; border: 1px solid #ccc;">Field</th>
+                <th style="padding: 10px; border: 1px solid #ccc;">Person 1</th>
+                <th style="padding: 10px; border: 1px solid #ccc;">Person 2</th>
+                <th style="padding: 10px; border: 1px solid #ccc;">Keep</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Given Names -->
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ccc;"><strong>Given Names</strong></td>
+                <td style="padding: 8px; border: 1px solid #ccc;">{{ person1.given_names }}</td>
+                <td style="padding: 8px; border: 1px solid #ccc;">{{ person2.given_names }}</td>
+                <td style="padding: 8px; border: 1px solid #ccc;">
+                    <input type="radio" name="given_names" value="{{ person1.given_names }}" checked> Person 1
+                    <input type="radio" name="given_names" value="{{ person2.given_names }}" style="margin-left: 15px;"> Person 2
+                </td>
+            </tr>
+
+            <!-- Surname -->
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ccc;"><strong>Surname</strong></td>
+                <td style="padding: 8px; border: 1px solid #ccc;">{{ person1.surname }}</td>
+                <td style="padding: 8px; border: 1px solid #ccc;">{{ person2.surname }}</td>
+                <td style="padding: 8px; border: 1px solid #ccc;">
+                    <input type="radio" name="surname" value="{{ person1.surname }}" checked> Person 1
+                    <input type="radio" name="surname" value="{{ person2.surname }}" style="margin-left: 15px;"> Person 2
+                </td>
+            </tr>
+
+            <!-- Maiden Name -->
+            {% if person1.maiden_name or person2.maiden_name %}
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ccc;"><strong>Maiden Name</strong></td>
+                <td style="padding: 8px; border: 1px solid #ccc;">{{ person1.maiden_name|default:"—" }}</td>
+                <td style="padding: 8px; border: 1px solid #ccc;">{{ person2.maiden_name|default:"—" }}</td>
+                <td style="padding: 8px; border: 1px solid #ccc;">
+                    {% if person1.maiden_name %}
+                        <input type="radio" name="maiden_name" value="{{ person1.maiden_name }}" checked> Person 1
+                    {% endif %}
+                    {% if person2.maiden_name %}
+                        <input type="radio" name="maiden_name" value="{{ person2.maiden_name }}" {% if not person1.maiden_name %}checked{% endif %} style="margin-left: 15px;"> Person 2
+                    {% endif %}
+                </td>
+            </tr>
+            {% endif %}
+
+            <!-- Gender -->
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ccc;"><strong>Gender</strong></td>
+                <td style="padding: 8px; border: 1px solid #ccc;">{{ person1.get_gender_display }}</td>
+                <td style="padding: 8px; border: 1px solid #ccc;">{{ person2.get_gender_display }}</td>
+                <td style="padding: 8px; border: 1px solid #ccc;">
+                    <input type="radio" name="gender" value="{{ person1.gender }}" checked> Person 1
+                    <input type="radio" name="gender" value="{{ person2.gender }}" style="margin-left: 15px;"> Person 2
+                </td>
+            </tr>
+
+            <!-- Generation -->
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ccc;"><strong>Generation</strong></td>
+                <td style="padding: 8px; border: 1px solid #ccc;">{{ person1.generation|default:"—" }}</td>
+                <td style="padding: 8px; border: 1px solid #ccc;">{{ person2.generation|default:"—" }}</td>
+                <td style="padding: 8px; border: 1px solid #ccc;">
+                    <input type="radio" name="generation" value="{{ person1.generation }}" checked> Person 1
+                    {% if person2.generation %}
+                        <input type="radio" name="generation" value="{{ person2.generation }}" style="margin-left: 15px;"> Person 2
+                    {% endif %}
+                </td>
+            </tr>
+
+            <!-- Genealogical ID -->
+            {% if person1.genealogical_id or person2.genealogical_id %}
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ccc;"><strong>Genealogical ID</strong></td>
+                <td style="padding: 8px; border: 1px solid #ccc;">{{ person1.genealogical_id|default:"—" }}</td>
+                <td style="padding: 8px; border: 1px solid #ccc;">{{ person2.genealogical_id|default:"—" }}</td>
+                <td style="padding: 8px; border: 1px solid #ccc;">
+                    {% if person1.genealogical_id %}
+                        <input type="radio" name="genealogical_id" value="{{ person1.genealogical_id }}" checked> Person 1
+                    {% endif %}
+                    {% if person2.genealogical_id %}
+                        <input type="radio" name="genealogical_id" value="{{ person2.genealogical_id }}" {% if not person1.genealogical_id %}checked{% endif %} style="margin-left: 15px;"> Person 2
+                    {% endif %}
+                </td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+
+    <h2>Parents Information</h2>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+        <thead>
+            <tr style="background: #e0e0e0;">
+                <th style="padding: 10px; border: 1px solid #ccc;">Person 1 Parents</th>
+                <th style="padding: 10px; border: 1px solid #ccc;">Person 2 Parents</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ccc; vertical-align: top;">
+                    {% if parents1 %}
+                        <ul style="margin: 0; padding-left: 20px;">
+                        {% for parent in parents1 %}
+                            <li>{{ parent.full_name }} (Gen {{ parent.generation|default:"?" }})</li>
+                        {% endfor %}
+                        </ul>
+                    {% else %}
+                        <em style="color: #999;">No parents recorded</em>
+                    {% endif %}
+                </td>
+                <td style="padding: 8px; border: 1px solid #ccc; vertical-align: top;">
+                    {% if parents2 %}
+                        <ul style="margin: 0; padding-left: 20px;">
+                        {% for parent in parents2 %}
+                            <li>{{ parent.full_name }} (Gen {{ parent.generation|default:"?" }})</li>
+                        {% endfor %}
+                        </ul>
+                    {% else %}
+                        <em style="color: #999;">No parents recorded</em>
+                    {% endif %}
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>Select Events to Keep</h2>
+    <p style="color: #666; font-size: 0.95em;">Check the events you want to keep in the merged person record. Unchecked events will be deleted.</p>
+
+    <div style="margin-bottom: 20px;">
+        <h3 style="color: #0066cc;">Person 1 Events</h3>
+        {% if events1 %}
+            {% for event in events1 %}
+            <div style="padding: 8px; border: 1px solid #e0e0e0; margin-bottom: 5px;">
+                <input type="checkbox" name="events" value="{{ event.id }}" checked>
+                <strong>{{ event.event_type }}:</strong>
+                {{ event.date|default:"No date" }}
+                {% if event.place %}in {{ event.place }}{% endif %}
+                {% if event.description %}<br><small style="margin-left: 25px;">{{ event.description }}</small>{% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <p style="color: #999;">No events for Person 1</p>
+        {% endif %}
+    </div>
+
+    <div style="margin-bottom: 30px;">
+        <h3 style="color: #cc6600;">Person 2 Events</h3>
+        {% if events2 %}
+            {% for event in events2 %}
+            <div style="padding: 8px; border: 1px solid #e0e0e0; margin-bottom: 5px;">
+                <input type="checkbox" name="events" value="{{ event.id }}" checked>
+                <strong>{{ event.event_type }}:</strong>
+                {{ event.date|default:"No date" }}
+                {% if event.place %}in {{ event.place }}{% endif %}
+                {% if event.description %}<br><small style="margin-left: 25px;">{{ event.description }}</small>{% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <p style="color: #999;">No events for Person 2</p>
+        {% endif %}
+    </div>
+
+    <div style="background: #fffacd; padding: 15px; margin-bottom: 20px; border-left: 4px solid #ff9800;">
+        <strong>⚠️ Warning:</strong> This action will:
+        <ul style="margin: 10px 0;">
+            <li>Keep Person 1 as the base record with your selected attributes</li>
+            <li>Merge all source documents and chunks from both persons</li>
+            <li>Move all relationships (parents/children) to the merged person</li>
+            <li>Delete Person 2 permanently</li>
+            <li>Delete any unchecked events</li>
+        </ul>
+        This action cannot be undone.
+    </div>
+
+    <div style="margin-top: 20px;">
+        <button type="submit" style="background: #4CAF50; color: white; padding: 10px 20px; border: none; cursor: pointer; font-size: 16px;">
+            Merge Persons
+        </button>
+        <a href="{% url 'admin:genealogy_potentialduplicate_changelist' %}" style="margin-left: 10px; padding: 10px 20px; background: #ccc; color: #333; text-decoration: none; display: inline-block;">
+            Cancel
+        </a>
+    </div>
+</form>
+
+{% endblock %}
