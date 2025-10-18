@@ -10,124 +10,71 @@ This project addresses a gap in commercial genealogy tools, which focus heavily 
 
 The extracted documents will serve as a searchable corpus, allowing family members to ask natural language questions about family history and receive answers that include suggestions for further research. This approach preserves both the factual genealogical data and the human stories that make family history meaningful.
 
-This project builds on lessons learned from an earlier [family-wiki](https://github.com/evz/family-wiki/) project that highlighted the importance of clear requirements, comprehensive testing, and iterative development when working with AI assistants on complex software projects.
+## Technical Implementation
 
-## Quick Demo
+### Document Layout Analysis & OCR
 
-Try the OCR processing with sample genealogy documents:
+**Three-stage pipeline:**
 
-**Requirements:** Git, Docker and make
+1. **Rotation Detection** (`genealogy/rotation_detector.py`)
+   - Coarse detection: Tesseract OSD for 0°/180° rotations
+   - Fine correction: GPU-accelerated projection profiles for -3° to +3° adjustments (0.1° precision using Kornia)
 
-```bash
-git clone <repository>
-cd ai-genealogy
-cp .env.example .env
-make demo
-```
+2. **Layout Detection** (`genealogy/document_layout_detector.py`)
+   - DocLayout-YOLO model for semantic document understanding
+   - Detects text blocks, titles, tables, figures, and captions with bounding boxes
 
-**Access:** http://localhost:8000/admin/ (admin/admin)
+3. **Region-Based OCR** (`genealogy/region_ocr_processor.py`)
+   - Processes each detected region independently with Tesseract
+   - Separates main content from inset annotations based on horizontal position (20% threshold)
+   - Deduplicates overlapping text from region boundaries
 
-The demo processes a couple sample pages from a book about my family and extracts multilingual text.
+**Research background:** Explored morphological segmentation (Ptak et al., 2017), OCR quality assessment (Schneider & Maurer, 2020), and variance-based image detection before adopting semantic layout analysis. Full research journey documented in [docs/doclayout_yolo_pipeline.md](docs/doclayout_yolo_pipeline.md).
 
-## Current Status
+### Entity Extraction
 
-### OCR Processing Pipeline - Optimized
-- Multi-format document processing (PDF, JPG, PNG, TIFF) with Tesseract PSM 1
-- Multi-language support (English/Dutch) for genealogical texts
-- Automatic orientation detection using Tesseract's built-in OSD (Orientation and Script Detection)
-- 92-94% OCR confidence on genealogy documents (significantly improved from 45-55%)
-- Batch upload functionality and background processing with Celery/Redis
+**Implementation:** `genealogy/tasks/extraction.py`, `genealogy/tasks/chunking.py`
 
-### AI-Powered Entity Extraction - Implemented
-- **Neural Network NER (Named Entity Recognition)**: Custom BERT-based model fine-tuned for genealogical entities
-- **Performance**: 96.84% F1 score (harmonic mean of precision and recall) across PERSON_NAME, DATE, PLACE, GENEALOGY_ID, FAMILY_GROUP entities
-- **Dual Extraction Pipeline**: Hybrid approach combining traditional regex patterns with neural network predictions
-- **Training Data Curation**: Django admin interface for manual refinement of genealogical anchor extractions
+- Generation-aware text chunking preserves genealogical document structure (family groups, generation headers)
+- Local LLM inference via Ollama for structured extraction
+- Extracts: person names, parent-child relationships, partnerships, events (birth, death, marriage)
+- Dynamic context window sizing based on chunk length (4K-128K tokens)
 
-### Text Processing & Data Standardization
-- **Generation-Aware Chunking**: Intelligent segmentation preserving genealogical document structure
-- **Date Standardization**: Multi-format Dutch/English date parsing ("15 maart 1654" → "1654-03-15")
-- **Genealogical ID Correction**: Systematic fixes for OCR errors in Roman numerals (IL→II, XIL→XII)
-- **Family Context Tracking**: Infers individual IDs from family group headers ("a. John" → "X.9.a")
+### Graph-Based Entity Resolution
 
-### Development Approach
-Uses Django admin interface to prototype and test business logic before building custom UI. This approach enables rapid iteration on data models and processing workflows while maintaining data quality through manual review capabilities.
+**Implementation:** `genealogy/clustering/`
 
-**Current Focus**: Refining neural network training data and relationship inference
-**Next Phase**: LLM integration for natural language queries and relationship inference
+Resolves duplicate person records across multiple text mentions using combined attribute and relational similarity.
 
-## Sample Data
+**Core techniques:**
 
-The `samples/` directory contains a couple sample pages from a book about my family with mixed English/Dutch text.
+- **Attribute Similarity**: Levenshtein distance for strings, tolerance-based decay for numeric values
+- **Disambiguation Weighting (AMB)**: Rare attribute values weighted higher than common ones using inverse frequency
+- **Relational Signals**: Jaccard similarity on spouse/parent/child overlap with cluster-aware transitive matching
+- **Constraint Propagation**:
+  - Temporal constraints (birth/death date compatibility within 5 years)
+  - Biological constraints (lifespan limits, death-before-birth detection)
+  - Sibling detection (shared parents + different names OR incompatible birth dates)
+- **Provenance Tracking**: Preserves all source entities, tracks pairwise confidence scores, creates canonical entities without destructive merging
 
-## Tested With
+**Research background:** Relational entity resolution techniques documented in [docs/family_clustering.md](docs/family_clustering.md), [docs/clustering_issues_analysis.md](docs/clustering_issues_analysis.md), and [research/pedigree_construction_notes.md](research/pedigree_construction_notes.md).
 
-- Python 3.12
-- Tesseract OCR 5.x with English and Dutch language packs
-- Docker 28.x
-- PostgreSQL 16 with pgvector extension
+## Architecture
 
-## Setup
-
-**Docker (Recommended):**
-```bash
-cp .env.example .env
-make up-build
-```
-
-**Local Development:**
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python manage.py migrate && python manage.py createsuperuser
-python manage.py runserver
-```
-
-
-## Usage
-
-**Document Processing Workflow:**
-1. Upload documents via Django admin interface
-2. Automatic OCR processing with PSM 1 orientation detection
-3. Intelligent text chunking with genealogical structure preservation
-4. Dual entity extraction (regex + neural network NER)
-5. Review extracted text, confidence scores, and genealogical anchors
-6. Manual curation of training data for neural network refinement
-
-**Current Capabilities:**
-- Multi-page document OCR with confidence scoring
-- Genealogical entity recognition and extraction
-- Date standardization and genealogical ID correction
-- Visual comparison of extraction methods (regex vs. neural network)
-- Manual anchor curation for gold standard training data
-
-## Development
-
-**Quality checks:** `make quality-gate` (linting, formatting, type checking, security, tests)
-
-**Tests:** `make test`
-
-**Architecture:** Django + PostgreSQL + Celery + Redis + Tesseract OCR + PyTorch
-
-**Key Technologies:**
-- **Machine Learning**: PyTorch + Transformers (BERT) for genealogical Named Entity Recognition
-- **Data Storage**: PostgreSQL with custom ArrayField handling for genealogical anchors
-- **Background Processing**: Celery with Redis for scalable document processing
-- **OCR**: Tesseract PSM 1 with automatic orientation detection and multi-language support
-
-Run `make help` to see all available development commands.
+- **Framework**: Django + PostgreSQL (with pgvector) + Celery + Redis
+- **OCR**: Tesseract 5.x with DocLayout-YOLO for layout analysis
+- **LLM**: Local inference via Ollama
+- **GPU Acceleration**: Kornia for rotation detection, PyTorch for models
 
 ## Documentation
 
-- [docs/INSTRUCTIONS.md](docs/INSTRUCTIONS.md) - Original project requirements and specifications
-- [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) - Development phases and implementation plan
-- [docs/DESIGN_LESSONS_LEARNED.md](docs/DESIGN_LESSONS_LEARNED.md) - Critical architecture lessons to avoid over-engineering
-- [docs/TESTING_LESSONS_LEARNED.md](docs/TESTING_LESSONS_LEARNED.md) - Real-world testing failures and solutions
+- [docs/doclayout_yolo_pipeline.md](docs/doclayout_yolo_pipeline.md) - OCR pipeline research and implementation
+- [docs/family_clustering.md](docs/family_clustering.md) - Entity resolution approach
+- [docs/clustering_issues_analysis.md](docs/clustering_issues_analysis.md) - Clustering edge cases and solutions
+- [research/pedigree_construction_notes.md](research/pedigree_construction_notes.md) - Pedigree construction notes
+- [docs/DESIGN_LESSONS_LEARNED.md](docs/DESIGN_LESSONS_LEARNED.md) - Architecture lessons
+- [docs/TESTING_LESSONS_LEARNED.md](docs/TESTING_LESSONS_LEARNED.md) - Testing failures and solutions
 
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details.
-
-## Support
-
-For issues and feature requests, please check the existing documentation and create detailed bug reports with reproduction steps.
