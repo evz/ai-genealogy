@@ -162,8 +162,14 @@ class Place(models.Model):
         return ", ".join(parts)
 
 
-class Person(models.Model):
-    """Individual person in genealogical records"""
+class PersonMention(models.Model):
+    """
+    Immutable person mention extracted from source text.
+
+    Represents a single extraction of a person from the source documents.
+    Never modified after creation. Multiple mentions can be resolved to
+    a single Identity through the MentionToIdentity mapping.
+    """
 
     GENDER_CHOICES = [
         ("M", "Male"),
@@ -173,12 +179,9 @@ class Person(models.Model):
         ("O", "Other"),
     ]
 
-    ENTITY_TYPE_CHOICES = [
-        ('EXTRACTED', 'Original Extracted Entity'),
-        ('CANONICAL', 'Merged Canonical Entity'),
-    ]
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Extracted attributes (immutable)
     given_names = models.CharField(max_length=255)
     surname = models.CharField(max_length=255)
     maiden_name = models.CharField(max_length=255, blank=True, help_text="Previous surname if changed")
@@ -188,38 +191,9 @@ class Person(models.Model):
     genealogical_id = models.CharField(max_length=50, blank=True, help_text="e.g., II.1.a")
     generation = models.PositiveIntegerField(null=True, blank=True, help_text="Generation number (I=1, II=2, etc.)")
 
-    # Entity resolution tracking
-    entity_type = models.CharField(
-        max_length=20,
-        choices=ENTITY_TYPE_CHOICES,
-        default='EXTRACTED',
-        help_text="Whether this is an original extraction or a merged canonical entity"
-    )
-
-    # For EXTRACTED entities that have been merged: points to their canonical version
-    # For CANONICAL entities: should be NULL
-    canonical_entity = models.ForeignKey(
-        'self',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='source_entities',
-        help_text="The canonical entity this record was merged into (NULL if not merged)"
-    )
-
-    # Many-to-many relationship for tracking merge composition via EntityMerge through model
-    merged_from = models.ManyToManyField(
-        'self',
-        through='EntityMerge',
-        symmetrical=False,
-        related_name='merged_into',
-        blank=True,
-        help_text="For CANONICAL entities: the source entities that were merged to create this"
-    )
-
-    # Source tracking
-    source_documents = models.ManyToManyField(Document, blank=True, related_name="persons")
-    source_chunks = models.ManyToManyField('TextChunk', blank=True, related_name="persons")
+    # Source tracking (immutable)
+    source_documents = models.ManyToManyField(Document, blank=True, related_name="person_mentions")
+    source_chunks = models.ManyToManyField('TextChunk', blank=True, related_name="person_mentions")
 
     # Duplicate detection - self-referential many-to-many for tracking potential duplicates
     potential_duplicates = models.ManyToManyField(
@@ -230,11 +204,19 @@ class Person(models.Model):
         blank=True
     )
 
+    # Quality flags
+    is_extraction_error = models.BooleanField(
+        default=False,
+        help_text="Mark true if this mention was incorrectly extracted (not a real person)"
+    )
+
+    # Never modified after creation
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["surname", "given_names"]
+        db_table = "genealogy_personmention"  # Keep DB table name consistent
 
     def __str__(self):
         name_parts = [self.given_names, self.surname]
@@ -248,7 +230,7 @@ class Person(models.Model):
 
 
 class PotentialDuplicate(models.Model):
-    """Through model for tracking potential duplicate persons"""
+    """Through model for tracking potential duplicate person mentions"""
 
     REVIEW_STATUS_CHOICES = [
         ('PENDING', 'Pending Review'),
@@ -257,8 +239,8 @@ class PotentialDuplicate(models.Model):
         ('MERGED', 'Already Merged'),
     ]
 
-    person1 = models.ForeignKey(Person, on_delete=models.CASCADE, related_name='duplicate_links_from')
-    person2 = models.ForeignKey(Person, on_delete=models.CASCADE, related_name='duplicate_links_to')
+    mention1 = models.ForeignKey(PersonMention, on_delete=models.CASCADE, related_name='duplicate_links_from')
+    mention2 = models.ForeignKey(PersonMention, on_delete=models.CASCADE, related_name='duplicate_links_to')
 
     # Matching metadata
     confidence_score = models.FloatField(
@@ -283,90 +265,126 @@ class PotentialDuplicate(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        unique_together = ['person1', 'person2']
+        unique_together = ['mention1', 'mention2']
         ordering = ['-confidence_score', 'review_status']
 
     def __str__(self):
-        return f"{self.person1.full_name} ≈ {self.person2.full_name} ({self.confidence_score:.0f}%)"
+        return f"{self.mention1.full_name} ≈ {self.mention2.full_name} ({self.confidence_score:.0f}%)"
 
 
-class EntityMerge(models.Model):
+class Identity(models.Model):
     """
-    Through model tracking the composition of merged canonical entities.
+    Canonical resolved person entity.
 
-    Records the provenance of entity resolution: which source entities were
-    merged together to create a canonical entity, along with merge metadata.
-
-    Each record represents one source entity being merged into the canonical entity,
-    with pairwise confidence scores and detailed provenance tracking.
+    Represents the "real person" that one or more PersonMentions refer to.
+    Soft-deleted when absorbed into another Identity during merges.
     """
 
-    # The canonical (merged) entity that was created
-    canonical_entity = models.ForeignKey(
-        Person,
-        on_delete=models.CASCADE,
-        related_name='merge_sources',
-        help_text="The canonical entity created from merging"
-    )
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    display_name = models.CharField(max_length=500, help_text="Display name for this identity")
+    notes = models.TextField(blank=True, help_text="Curator notes about this identity")
 
-    # The source entity that was merged into the canonical entity
-    source_entity = models.ForeignKey(
-        Person,
-        on_delete=models.CASCADE,
-        related_name='merge_targets',
-        help_text="The source entity that was merged"
-    )
+    # Soft-delete for reversibility
+    is_deleted = models.BooleanField(default=False, help_text="True if this identity was absorbed into another")
 
-    # Merge metadata - pairwise between canonical and this source
-    confidence_score = models.FloatField(
-        help_text="Pairwise confidence score for merging this source into canonical (0-100)"
-    )
-
-    # Store all pairwise similarities within the cluster for full auditability
-    pairwise_similarities = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text="Dict of {other_source_entity_id: confidence_score} for all pairs in cluster"
-    )
-
-    merge_algorithm = models.CharField(
-        max_length=50,
-        default='manual',
-        help_text="Algorithm or method used for merge (e.g., 'graph_clustering_v1', 'manual')"
-    )
-
-    merge_reason = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text="Detailed merge provenance: matching signals, cluster info, atomic similarities, etc."
-    )
-
-    # Attribution
-    merged_by = models.CharField(
-        max_length=100,
-        default='AUTO',
-        help_text="Who/what performed the merge: username or 'AUTO'"
-    )
-
-    merged_at = models.DateTimeField(
-        default=timezone.now,
-        help_text="When this merge occurred"
-    )
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ['canonical_entity', 'source_entity']
-        ordering = ['-merged_at']
+        verbose_name_plural = "Identities"
+        ordering = ["display_name"]
+
+    def __str__(self):
+        return self.display_name
+
+
+class MentionToIdentity(models.Model):
+    """
+    Mapping layer - the ONLY mutable part of the system.
+
+    Maps PersonMentions to Identities. This is where merges/unmerges happen.
+    All other data (mentions, events, relationships) remains immutable.
+    """
+
+    mention = models.OneToOneField(
+        PersonMention,
+        primary_key=True,
+        on_delete=models.CASCADE,
+        help_text="The person mention being mapped"
+    )
+    identity = models.ForeignKey(
+        Identity,
+        on_delete=models.CASCADE,
+        related_name="mention_mappings",
+        help_text="The identity this mention maps to"
+    )
+
+    # Audit trail
+    mapped_at = models.DateTimeField(auto_now=True, help_text="When this mapping was last updated")
+    mapped_by = models.CharField(max_length=100, default="AUTO", help_text="Who/what updated this mapping")
+
+    class Meta:
         indexes = [
-            models.Index(fields=['canonical_entity', '-merged_at']),
-            models.Index(fields=['source_entity']),
+            models.Index(fields=['identity']),
         ]
 
     def __str__(self):
-        return f"{self.source_entity.full_name} → {self.canonical_entity.full_name} ({self.confidence_score:.0f}%, {self.merged_at.strftime('%Y-%m-%d')})"
+        return f"{self.mention.full_name} → {self.identity.display_name}"
 
 
-class Partnership(models.Model):
-    """Partnership/relationship between people (marriage, civil union, etc.)"""
+class MergeEvent(models.Model):
+    """
+    Audit log of all merge/unmerge operations.
+
+    Records full transaction details for reversibility. Never delete from this table.
+    """
+
+    EVENT_TYPE_CHOICES = [
+        ('merge', 'Merge'),
+        ('unmerge', 'Unmerge'),
+        ('split', 'Split'),
+    ]
+
+    id = models.BigAutoField(primary_key=True)
+    event_type = models.CharField(max_length=20, choices=EVENT_TYPE_CHOICES)
+
+    # Full transaction payload (JSON)
+    # For merge: {survivor_identity, absorbed_identities, mention_moves: [{mention_id, from, to}]}
+    # For unmerge: same structure but reversed
+    payload = models.JSONField(help_text="Full transaction details for reversibility")
+
+    # Attribution
+    performed_by = models.CharField(max_length=100, default="AUTO")
+    performed_at = models.DateTimeField(default=timezone.now)
+
+    # If this event reverses another event
+    reversed_event = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reversals",
+        help_text="The event this undoes (for unmerge operations)"
+    )
+
+    class Meta:
+        ordering = ['-performed_at']
+        indexes = [
+            models.Index(fields=['-performed_at']),
+            models.Index(fields=['event_type']),
+        ]
+
+    def __str__(self):
+        return f"{self.get_event_type_display()} at {self.performed_at.strftime('%Y-%m-%d %H:%M')} by {self.performed_by}"
+
+
+class PartnershipMention(models.Model):
+    """
+    Immutable partnership mention extracted from source text.
+
+    Represents partnerships between PersonMentions (marriage, civil union, etc.)
+    Never modified after creation.
+    """
 
     PARTNERSHIP_TYPES = [
         ("MARRIAGE", "Marriage"),
@@ -377,7 +395,7 @@ class Partnership(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    partners = models.ManyToManyField(Person, related_name="partnerships")
+    partners = models.ManyToManyField(PersonMention, related_name="partnerships")
     partnership_type = models.CharField(max_length=20, choices=PARTNERSHIP_TYPES, default="MARRIAGE")
 
     # Partnership start details
@@ -396,11 +414,15 @@ class Partnership(models.Model):
     end_date_estimated = models.BooleanField(default=False)
     end_reason = models.CharField(max_length=50, blank=True, help_text="divorce, death, separation, etc.")
 
-    # Source tracking
+    # Source tracking (immutable)
     source_documents = models.ManyToManyField(Document, blank=True, related_name="partnerships")
 
+    # Never modified after creation
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "genealogy_partnershipmention"
 
     def __str__(self):
         partner_names = [partner.full_name for partner in self.partners.all()]
@@ -408,7 +430,12 @@ class Partnership(models.Model):
 
 
 class Event(models.Model):
-    """Genealogical events (baptism, burial, etc.)"""
+    """
+    Immutable genealogical event extracted from source text.
+
+    Events are attached to PersonMentions or PartnershipMentions and
+    never modified after creation.
+    """
 
     EVENT_TYPES = [
         ("BIRT", "Birth"),
@@ -427,9 +454,9 @@ class Event(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     event_type = models.CharField(max_length=5, choices=EVENT_TYPES)
-    person = models.ForeignKey(Person, on_delete=models.CASCADE, related_name="events", null=True, blank=True)
+    mention = models.ForeignKey(PersonMention, on_delete=models.CASCADE, related_name="events", null=True, blank=True)
     partnership = models.ForeignKey(
-        Partnership,
+        PartnershipMention,
         on_delete=models.CASCADE,
         related_name="events",
         null=True,
@@ -442,9 +469,10 @@ class Event(models.Model):
 
     description = models.TextField(blank=True)
 
-    # Source tracking
+    # Source tracking (immutable)
     source_documents = models.ManyToManyField(Document, blank=True, related_name="events")
 
+    # Never modified after creation
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -452,12 +480,17 @@ class Event(models.Model):
         ordering = ["date", "event_type"]
 
     def __str__(self):
-        subject = self.person.full_name if self.person else str(self.partnership)
+        subject = self.mention.full_name if self.mention else str(self.partnership)
         return f"{self.get_event_type_display()}: {subject}"
 
 
-class ParentChildRelationship(models.Model):
-    """Relationship between child and parent(s)"""
+class RelationshipMention(models.Model):
+    """
+    Immutable parent-child relationship extracted from source text.
+
+    Represents relationships between PersonMentions.
+    Never modified after creation.
+    """
 
     RELATIONSHIP_TYPES = [
         ("BIOLOGICAL", "Biological"),
@@ -469,32 +502,34 @@ class ParentChildRelationship(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    child = models.ForeignKey(Person, on_delete=models.CASCADE, related_name="parent_relationships")
-    parent = models.ForeignKey(Person, on_delete=models.CASCADE, related_name="child_relationships")
+    child_mention = models.ForeignKey(PersonMention, on_delete=models.CASCADE, related_name="parent_relationships")
+    parent_mention = models.ForeignKey(PersonMention, on_delete=models.CASCADE, related_name="child_relationships")
     relationship_type = models.CharField(max_length=15, choices=RELATIONSHIP_TYPES, default="BIOLOGICAL")
 
     # Optional: link to partnership if child is from a specific partnership
     partnership = models.ForeignKey(
-        Partnership,
+        PartnershipMention,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="children",
     )
 
-    # Source tracking
+    # Source tracking (immutable)
     source_documents = models.ManyToManyField(Document, blank=True, related_name="parent_child_relationships")
 
+    # Never modified after creation
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        unique_together = ["child", "parent"]
+        unique_together = ["child_mention", "parent_mention"]
+        db_table = "genealogy_relationshipmention"
 
     def __str__(self):
         return (
-            f"{self.child.full_name} - "
+            f"{self.child_mention.full_name} - "
             f"{self.get_relationship_type_display().lower()} child of "
-            f"{self.parent.full_name}"
+            f"{self.parent_mention.full_name}"
         )
 
 

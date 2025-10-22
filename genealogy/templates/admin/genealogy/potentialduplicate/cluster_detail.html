@@ -171,9 +171,6 @@
 
 <div class="action-buttons">
     <strong>Review Actions:</strong>
-    <a href="{% url 'admin:genealogy_potentialduplicate_cluster_merge' cluster.id %}" class="btn btn-primary">
-        🔀 Merge All {{ persons|length }} Persons
-    </a>
     <a href="{% url 'admin:genealogy_potentialduplicate_cluster_reject' cluster.id %}" class="btn btn-danger">
         ✖ Not Duplicates
     </a>
@@ -184,13 +181,36 @@
 
 <h2>Person Comparison ({{ persons|length }} persons)</h2>
 
+<form method="post" action="{% url 'admin:genealogy_potentialduplicate_cluster_merge' cluster.id %}">
+    {% csrf_token %}
+
+    <div style="margin: 20px 0; padding: 15px; background: #e3f2fd; border-left: 4px solid #2196f3; border-radius: 4px;">
+        <strong>Select mentions to merge:</strong> Check the boxes next to the mentions you want to merge together.
+        <div style="margin-top: 10px;">
+            <label style="margin-right: 15px;">
+                <input type="checkbox" id="select-all" onclick="toggleAll(this)"> Select All
+            </label>
+            <button type="submit" class="btn btn-primary" style="margin-left: 10px;">
+                🔀 Merge Selected Mentions
+            </button>
+        </div>
+    </div>
+
 <div class="comparison-grid">
     {% for person in persons %}
-    <div class="person-card">
+    <div class="person-card" {% if person.mention_count > 1 %}style="border-color: #4caf50; background: #f1f8f4;"{% endif %}>
+        <div style="float: right;">
+            <input type="checkbox" name="persons_to_merge" value="{{ person.id }}" class="person-checkbox" {% if person.mention_count > 1 %}checked{% endif %}>
+        </div>
         <h3>
-            <a href="{% url 'admin:genealogy_person_change' person.id %}" target="_blank">
+            <a href="{% url 'admin:genealogy_personmention_change' person.id %}" target="_blank">
                 {{ person.full_name }}
             </a>
+            {% if person.mention_count > 1 %}
+                <span style="background: #4caf50; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75em; margin-left: 5px;">
+                    ✓ Already merged ({{ person.mention_count }} mentions)
+                </span>
+            {% endif %}
         </h3>
 
         <div class="attribute-row">
@@ -208,10 +228,21 @@
             <span class="attribute-value">{{ person.generation|default:"—" }}</span>
         </div>
 
+        {% with chunks=person.source_chunks.all %}
+        {% if chunks %}
         <div class="attribute-row">
-            <span class="attribute-label">Gender:</span>
-            <span class="attribute-value">{{ person.get_gender_display }}</span>
+            <span class="attribute-label">Family Group:</span>
+            <span class="attribute-value">
+                {% for chunk in chunks %}
+                    {% if chunk.family_groups %}
+                        {{ chunk.family_groups|join:", " }}{% if not forloop.last %}; {% endif %}
+                    {% endif %}
+                {% endfor %}
+                {% if not chunks|length or not chunks.0.family_groups %}—{% endif %}
+            </span>
         </div>
+        {% endif %}
+        {% endwith %}
 
         {% with events=person.events.all %}
         {% if events %}
@@ -245,7 +276,9 @@
             <span class="attribute-label">Source Chunks ({{ chunks|length }}):</span>
             {% for chunk in chunks|slice:":2" %}
             <div class="source-chunk">
-                {{ chunk.text_content|truncatewords:15 }}
+                <a href="{% url 'admin:genealogy_textchunk_change' chunk.id %}" target="_blank" style="color: #1976d2; text-decoration: none;">
+                    📄 {{ chunk.text_content|truncatewords:15 }}
+                </a>
             </div>
             {% endfor %}
             {% if chunks|length > 2 %}
@@ -302,5 +335,14 @@
         {% endfor %}
     </div>
 </div>
+
+</form>
+
+<script>
+function toggleAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.person-checkbox');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+}
+</script>
 
 {% endblock %}

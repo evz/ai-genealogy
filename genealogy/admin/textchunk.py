@@ -4,7 +4,7 @@ from django.contrib import admin, messages
 from django.urls import reverse
 from django.utils.html import format_html
 
-from ..models import TextChunk, Person, Event, ParentChildRelationship
+from ..models import TextChunk, PersonMention, Event, RelationshipMention
 from ..ollama_utils import OllamaClient, get_default_models
 from ..tasks import extract_entities_from_chunk
 
@@ -175,7 +175,7 @@ class TextChunkAdmin(admin.ModelAdmin):
         if not obj.pk:
             return "—"
 
-        persons = Person.objects.filter(source_chunks=obj).order_by('generation', 'given_names', 'surname')
+        persons = PersonMention.objects.filter(source_chunks=obj).order_by('generation', 'given_names', 'surname')
 
         if not persons:
             return format_html('<em style="color: #999;">No persons created yet</em>')
@@ -185,7 +185,7 @@ class TextChunkAdmin(admin.ModelAdmin):
         html.append('<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px;">')
 
         for person in persons:
-            person_url = reverse('admin:genealogy_person_change', args=[person.id])
+            person_url = reverse('admin:genealogy_personmention_change', args=[person.id])
             html.append(
                 f'<div style="padding: 8px; border: 1px solid #0066cc; border-radius: 4px; background: #e3f2fd;">'
                 f'<a href="{person_url}" target="_blank" style="font-weight: bold; color: #0066cc;">{person.full_name}</a><br>'
@@ -204,13 +204,13 @@ class TextChunkAdmin(admin.ModelAdmin):
             return "—"
 
         # Get all persons from this chunk
-        persons = Person.objects.filter(source_chunks=obj)
+        persons = PersonMention.objects.filter(source_chunks=obj)
 
         if not persons:
             return format_html('<em style="color: #999;">No persons from this chunk</em>')
 
         # Get events for these persons
-        events = Event.objects.filter(person__in=persons).select_related('person', 'place').order_by('person__given_names', 'event_type')
+        events = Event.objects.filter(mention__in=persons).select_related('mention', 'place').order_by('mention__given_names', 'event_type')
 
         if not events:
             return format_html('<em style="color: #999;">No events created yet</em>')
@@ -222,10 +222,10 @@ class TextChunkAdmin(admin.ModelAdmin):
         from collections import defaultdict
         events_by_person = defaultdict(list)
         for event in events:
-            events_by_person[event.person].append(event)
+            events_by_person[event.mention].append(event)
 
         for person, person_events in events_by_person.items():
-            person_url = reverse('admin:genealogy_person_change', args=[person.id])
+            person_url = reverse('admin:genealogy_personmention_change', args=[person.id])
             html.append(f'<div style="margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">')
             html.append(f'<div style="font-weight: bold; margin-bottom: 5px;"><a href="{person_url}" target="_blank" style="color: #0066cc;">{person.full_name}</a></div>')
             html.append('<ul style="margin: 0; padding-left: 20px;">')
@@ -251,7 +251,7 @@ class TextChunkAdmin(admin.ModelAdmin):
             return "—"
 
         # Get all persons from this chunk
-        persons = Person.objects.filter(source_chunks=obj)
+        persons = PersonMention.objects.filter(source_chunks=obj)
 
         if not persons:
             return format_html('<em style="color: #999;">No persons from this chunk</em>')
@@ -259,15 +259,15 @@ class TextChunkAdmin(admin.ModelAdmin):
         person_ids = [p.id for p in persons]
 
         # Get relationships where either parent or child is from this chunk
-        relationships = ParentChildRelationship.objects.filter(
-            child_id__in=person_ids
-        ).select_related('child', 'parent').order_by('child__given_names')
+        relationships = RelationshipMention.objects.filter(
+            child_mention_id__in=person_ids
+        ).select_related('child_mention', 'parent_mention').order_by('child_mention__given_names')
 
-        parent_relationships = ParentChildRelationship.objects.filter(
-            parent_id__in=person_ids
-        ).select_related('child', 'parent').exclude(
-            child_id__in=person_ids  # Don't duplicate relationships already shown
-        ).order_by('child__given_names')
+        parent_relationships = RelationshipMention.objects.filter(
+            parent_mention_id__in=person_ids
+        ).select_related('child_mention', 'parent_mention').exclude(
+            child_mention_id__in=person_ids  # Don't duplicate relationships already shown
+        ).order_by('child_mention__given_names')
 
         total_count = relationships.count() + parent_relationships.count()
 
@@ -282,14 +282,14 @@ class TextChunkAdmin(admin.ModelAdmin):
             html.append('<div style="margin-bottom: 15px;">')
             html.append('<h4 style="margin: 0 0 10px 0; color: #0066cc;">As Child</h4>')
             for rel in relationships:
-                rel_url = reverse('admin:genealogy_parentchildrelationship_change', args=[rel.id])
-                child_url = reverse('admin:genealogy_person_change', args=[rel.child.id])
-                parent_url = reverse('admin:genealogy_person_change', args=[rel.parent.id])
+                rel_url = reverse('admin:genealogy_relationshipmention_change', args=[rel.id])
+                child_url = reverse('admin:genealogy_personmention_change', args=[rel.child_mention.id])
+                parent_url = reverse('admin:genealogy_personmention_change', args=[rel.parent_mention.id])
 
                 html.append(
                     f'<div style="padding: 8px; margin-bottom: 5px; border-left: 3px solid #4caf50; background: #f1f8f4;">'
-                    f'<a href="{child_url}" target="_blank" style="font-weight: bold; color: #0066cc;">{rel.child.full_name}</a> '
-                    f'← <a href="{parent_url}" target="_blank" style="color: #666;">{rel.parent.full_name}</a> '
+                    f'<a href="{child_url}" target="_blank" style="font-weight: bold; color: #0066cc;">{rel.child_mention.full_name}</a> '
+                    f'← <a href="{parent_url}" target="_blank" style="color: #666;">{rel.parent_mention.full_name}</a> '
                     f'<a href="{rel_url}" target="_blank" style="color: #999; font-size: 0.9em;">[edit]</a>'
                     f'</div>'
                 )
@@ -300,14 +300,14 @@ class TextChunkAdmin(admin.ModelAdmin):
             html.append('<div style="margin-bottom: 15px;">')
             html.append('<h4 style="margin: 0 0 10px 0; color: #ff9800;">As Parent</h4>')
             for rel in parent_relationships:
-                rel_url = reverse('admin:genealogy_parentchildrelationship_change', args=[rel.id])
-                child_url = reverse('admin:genealogy_person_change', args=[rel.child.id])
-                parent_url = reverse('admin:genealogy_person_change', args=[rel.parent.id])
+                rel_url = reverse('admin:genealogy_relationshipmention_change', args=[rel.id])
+                child_url = reverse('admin:genealogy_personmention_change', args=[rel.child_mention.id])
+                parent_url = reverse('admin:genealogy_personmention_change', args=[rel.parent_mention.id])
 
                 html.append(
                     f'<div style="padding: 8px; margin-bottom: 5px; border-left: 3px solid #ff9800; background: #fff8f0;">'
-                    f'<a href="{parent_url}" target="_blank" style="font-weight: bold; color: #ff9800;">{rel.parent.full_name}</a> '
-                    f'→ <a href="{child_url}" target="_blank" style="color: #666;">{rel.child.full_name}</a> '
+                    f'<a href="{parent_url}" target="_blank" style="font-weight: bold; color: #ff9800;">{rel.parent_mention.full_name}</a> '
+                    f'→ <a href="{child_url}" target="_blank" style="color: #666;">{rel.child_mention.full_name}</a> '
                     f'<a href="{rel_url}" target="_blank" style="color: #999; font-size: 0.9em;">[edit]</a>'
                     f'</div>'
                 )

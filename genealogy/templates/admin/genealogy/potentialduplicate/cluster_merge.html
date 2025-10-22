@@ -188,20 +188,22 @@ document.addEventListener('DOMContentLoaded', function() {
 <h1>{{ title }}</h1>
 
 <div class="warning-box">
-    <strong>⚠️ Warning:</strong> This will merge {{ persons|length }} person records into ONE person.
-    All relationships, events, and source documents will be consolidated. This action cannot be easily undone.
+    <strong>ℹ️ Info:</strong> This will merge {{ persons|length }} person mentions into ONE identity.
+    All mentions will be linked to the same Identity, making them appear as one person. This action is fully reversible via the merge history.
 </div>
 
 <form method="post" class="merge-form">
     {% csrf_token %}
+    <input type="hidden" name="confirm_merge" value="1">
+    {% for person in persons %}
+    <input type="hidden" name="persons_to_merge" value="{{ person.id }}">
+    {% endfor %}
 
     <div class="person-selector">
-        <h2>Step 1: Select Persons to Merge</h2>
-        <p>Check which persons are actually duplicates and should be merged together. Uncheck any that are NOT duplicates (e.g., siblings).</p>
-
+        <h2>Merging {{ persons|length }} Persons</h2>
+        <p><strong>Selected persons:</strong></p>
         {% for person in persons %}
-        <label class="person-option">
-            <input type="checkbox" name="persons_to_merge" value="{{ person.id }}" checked>
+        <div class="person-option" style="border-color: #4caf50;">
             <strong>{{ person.full_name }}</strong>
             <div class="person-preview">
                 Gen {{ person.generation|default:"?" }} |
@@ -212,12 +214,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 {% endif %} |
                 Sources: {{ person.source_chunks.count }} chunks
             </div>
-        </label>
+        </div>
         {% endfor %}
     </div>
 
     <div class="person-selector">
-        <h2>Step 2: Choose Base Person</h2>
+        <h2>Step 1: Choose Display Name</h2>
         <p>Of the persons selected above, choose which one to keep as the base.</p>
 
         {% for person in persons %}

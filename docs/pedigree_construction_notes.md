@@ -1,7 +1,5 @@
 Kirielle et al. (2022), *“Unsupervised Graph-based Entity Resolution for Accurate and Efficient Pedigree Construction,”* is one of the few papers that tries to unify **record linkage** and **family graph reconstruction** in one coherent framework — essentially solving the same kind of problem you’re facing.
 
-Let’s walk through what they actually propose, how it works step-by-step, and why it’s relevant to this project.
-
 ---
 
 ## 🧩 1. Problem they’re solving

@@ -20,7 +20,7 @@ from django.core.management.base import BaseCommand
 from django.db.models import Prefetch
 
 from genealogy.clustering import DependencyGraph, PersonRecord
-from genealogy.models import Person, Partnership, ParentChildRelationship, PotentialDuplicate
+from genealogy.models import PersonMention, PartnershipMention, RelationshipMention, PotentialDuplicate
 
 logger = logging.getLogger(__name__)
 
@@ -125,12 +125,12 @@ class Command(BaseCommand):
         graph = DependencyGraph()
 
         # Prefetch related data for efficiency
-        persons = Person.objects.prefetch_related(
+        persons = PersonMention.objects.prefetch_related(
             'events',
             'events__place',
             'parent_relationships',
             'child_relationships',
-            Prefetch('partnerships', queryset=Partnership.objects.prefetch_related('partners'))
+            Prefetch('partnerships', queryset=PartnershipMention.objects.prefetch_related('partners'))
         ).all()
 
         for person in persons:
@@ -338,26 +338,26 @@ class Command(BaseCommand):
                 # These might be siblings sharing children (unlikely but possible in complex families)
                 continue
 
-            # Create Partnership in database (if not dry run)
+            # Create PartnershipMention in database (if not dry run)
             if not self.dry_run:
                 parent1 = p1_record.person
                 parent2 = p2_record.person
 
                 # Check if partnership already exists in database
-                existing = Partnership.objects.filter(
+                existing = PartnershipMention.objects.filter(
                     partners=parent1
                 ).filter(
                     partners=parent2
                 ).first()
 
                 if not existing:
-                    partnership = Partnership.objects.create(
+                    partnership = PartnershipMention.objects.create(
                         partnership_type='MARRIAGE'
                     )
                     partnership.partners.add(parent1, parent2)
                     # Link to source documents from shared children
                     for child_id in shared_children:
-                        child_person = Person.objects.get(id=child_id)
+                        child_person = PersonMention.objects.get(id=child_id)
                         for doc in child_person.source_documents.all():
                             partnership.source_documents.add(doc)
 
@@ -521,8 +521,8 @@ class Command(BaseCommand):
                         # Create or update PotentialDuplicate record
                         # Convert similarity (0-1) to confidence_score (0-100)
                         PotentialDuplicate.objects.update_or_create(
-                            person1_id=min(p1_id, p2_id),
-                            person2_id=max(p1_id, p2_id),
+                            mention1_id=min(p1_id, p2_id),
+                            mention2_id=max(p1_id, p2_id),
                             defaults={
                                 'confidence_score': similarity * 100.0,
                                 'match_reasons': match_reasons,

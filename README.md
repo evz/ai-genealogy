@@ -2,97 +2,89 @@
 
 [![Quality Gate](https://github.com/evz/ai-genealogy/actions/workflows/quality-gate.yml/badge.svg)](https://github.com/evz/ai-genealogy/actions/workflows/quality-gate.yml)
 
-AI-powered genealogy digitization that processes Dutch family history books using OCR and LLM technology.
+Extracts structured genealogical data from Dutch family history books using OCR, layout analysis, and local LLMs. Currently processes scanned documents into a database of person mentions, events, and relationships with graph-based duplicate detection.
 
-## About
+## What It Does
 
-This project addresses a gap in commercial genealogy tools, which focus heavily on names and dates while overlooking the fact that these refer to real people who lived full lives with stories worth preserving. The goal is to extract structured data from family documents and transform it into a collaborative family wiki where relatives can contribute not only genealogical facts but also stories about family gatherings, migrations, and daily life.
+Takes printed family history books (Dutch "familiegeschiedenis" with complex layouts, marginal annotations, and genealogical notation) and turns them into structured, queryable data. The goal is eventually building a family wiki where facts and stories live together, but right now it's focused on accurate extraction and entity resolution.
 
-The extracted documents will serve as a searchable corpus, allowing family members to ask natural language questions about family history and receive answers that include suggestions for further research. This approach preserves both the factual genealogical data and the human stories that make family history meaningful.
+The interesting problems are mostly around OCR (handling complex layouts with semantic understanding) and entity resolution (merging duplicate person mentions using both attribute similarity and family relationship graphs).
 
-## Technical Implementation
+## Pipeline
 
-### Document Layout Analysis & OCR
+### 1. OCR with Layout Understanding
 
-**Three-stage pipeline:**
+The OCR pipeline does semantic document layout analysis before text extraction:
 
-1. **Rotation Detection** (`genealogy/rotation_detector.py`)
-   - Coarse detection: Tesseract OSD for 0°/180° rotations
-   - Fine correction: GPU-accelerated projection profiles for -3° to +3° adjustments (0.1° precision using Kornia)
+- **Rotation correction** - Coarse detection with Tesseract OSD, then GPU-accelerated projection profiles (Kornia) for fine adjustment (0.1° precision)
+- **Layout detection** - DocLayout-YOLO finds text blocks, titles, tables, figures, captions
+- **Region-based OCR** - Tesseract processes each region independently, separates main text from marginal annotations based on position
 
-2. **Layout Detection** (`genealogy/document_layout_detector.py`)
-   - DocLayout-YOLO model for semantic document understanding
-   - Detects text blocks, titles, tables, figures, and captions with bounding boxes
+This approach came after trying morphological segmentation and variance-based methods. Layout-aware processing handles Dutch family book formats much better than naive line-by-line OCR. Details in [docs/doclayout_yolo_pipeline.md](docs/doclayout_yolo_pipeline.md).
 
-3. **Region-Based OCR** (`genealogy/region_ocr_processor.py`)
-   - Processes each detected region independently with Tesseract
-   - Separates main content from inset annotations based on horizontal position (20% threshold)
-   - Deduplicates overlapping text from region boundaries
+### 2. Entity Extraction
 
-**Research background:** Explored morphological segmentation (Ptak et al., 2017), OCR quality assessment (Schneider & Maurer, 2020), and variance-based image detection before adopting semantic layout analysis. Full research journey documented in [docs/doclayout_yolo_pipeline.md](docs/doclayout_yolo_pipeline.md).
+Local LLM (via Ollama) extracts structured data from OCR text:
 
-### Entity Extraction
+- Generation-aware chunking preserves genealogical structure (family groups, generation headers)
+- Extracts person mentions, relationships (parent-child, partnerships), events (birth, death, marriage)
+- Dynamic context window (4K-128K tokens) based on chunk complexity
 
-**Implementation:** `genealogy/tasks/extraction.py`, `genealogy/tasks/chunking.py`
+All extractions stored as immutable `PersonMention` records with source provenance. Each mention gets mapped to an `Identity` (the "real person") through a mutable mapping layer.
 
-- Generation-aware text chunking preserves genealogical document structure (family groups, generation headers)
-- Local LLM inference via Ollama for structured extraction
-- Extracts: person names, parent-child relationships, partnerships, events (birth, death, marriage)
-- Dynamic context window sizing based on chunk length (4K-128K tokens)
+### 3. Graph-Based Duplicate Detection
 
-### Graph-Based Entity Resolution
+Clustering algorithm (based on Kirielle et al. 2022) finds duplicate person mentions using attribute + relational similarity:
 
-**Implementation:** `genealogy/clustering/`
+- **Attribute matching** - Levenshtein distance for names, decay functions for dates, inverse frequency weighting for rare values
+- **Relationship matching** - Jaccard similarity on spouse/parent/child overlap, with merge-aware transitive matching (if two mentions share a spouse that's already been identified as the same person, that's strong evidence they're also the same)
+- **Constraint validation** - Temporal (birth/death compatibility), biological (lifespan limits), sibling detection (shared parents but different names)
+- **Iterative refinement** - After merging some clusters, re-run clustering to find new matches that depend on previous merges
 
-Resolves duplicate person records across multiple text mentions using combined attribute and relational similarity.
+Creates `PotentialDuplicate` records for manual review. Merge operations are fully reversible through an audit log.
 
-**Core techniques:**
+Details in [docs/pedigree_construction_notes.md](docs/pedigree_construction_notes.md) and [docs/family_clustering.md](docs/family_clustering.md).
 
-- **Attribute Similarity**: Levenshtein distance for strings, tolerance-based decay for numeric values
-- **Disambiguation Weighting (AMB)**: Rare attribute values weighted higher than common ones using inverse frequency
-- **Relational Signals**: Jaccard similarity on spouse/parent/child overlap with cluster-aware transitive matching
-- **Constraint Propagation**:
-  - Temporal constraints (birth/death date compatibility within 5 years)
-  - Biological constraints (lifespan limits, death-before-birth detection)
-  - Sibling detection (shared parents + different names OR incompatible birth dates)
-- **Provenance Tracking**: Preserves all source entities, tracks pairwise confidence scores, creates canonical entities without destructive merging
+## Tech Stack
 
-**Research background:** Relational entity resolution techniques documented in [docs/family_clustering.md](docs/family_clustering.md), [docs/clustering_issues_analysis.md](docs/clustering_issues_analysis.md), and [research/pedigree_construction_notes.md](research/pedigree_construction_notes.md).
+- Django + PostgreSQL (pgvector for future embedding work) + Celery + Redis
+- Tesseract 5.x + DocLayout-YOLO
+- Ollama for local LLM inference
+- Kornia/PyTorch for GPU-accelerated image processing
 
-## Architecture
+## Current Status
 
-- **Framework**: Django + PostgreSQL (with pgvector) + Celery + Redis
-- **OCR**: Tesseract 5.x with DocLayout-YOLO for layout analysis
-- **LLM**: Local inference via Ollama
-- **GPU Acceleration**: Kornia for rotation detection, PyTorch for models
+The pipeline works end-to-end (OCR → extraction → clustering → manual merge review). Currently refining the entity resolution logic and building out the admin UI for merge operations.
 
-## Documentation
+Recent work:
+- Implemented reversible provenance architecture (all extractions immutable, merges tracked in audit log)
+- Added merge-aware clustering (re-running clustering after merges picks up new matches based on previously merged identities)
+- Improved sibling detection and constraint validation
 
-- [docs/doclayout_yolo_pipeline.md](docs/doclayout_yolo_pipeline.md) - OCR pipeline research and implementation
+Still todo:
+- Better LLM prompts for relationship extraction (currently misses some edge cases)
+- Evaluation metrics for clustering quality
+- UI polish for the merge review workflow
+
+## Docs
+
+- [docs/doclayout_yolo_pipeline.md](docs/doclayout_yolo_pipeline.md) - OCR pipeline design
+- [docs/pedigree_construction_notes.md](docs/pedigree_construction_notes.md) - Clustering algorithm notes (Kirielle et al. 2022)
 - [docs/family_clustering.md](docs/family_clustering.md) - Entity resolution approach
-- [docs/clustering_issues_analysis.md](docs/clustering_issues_analysis.md) - Clustering edge cases and solutions
-- [research/pedigree_construction_notes.md](research/pedigree_construction_notes.md) - Pedigree construction notes
-- [docs/DESIGN_LESSONS_LEARNED.md](docs/DESIGN_LESSONS_LEARNED.md) - Architecture lessons
-- [docs/TESTING_LESSONS_LEARNED.md](docs/TESTING_LESSONS_LEARNED.md) - Testing failures and solutions
+- [docs/clustering_issues_analysis.md](docs/clustering_issues_analysis.md) - Edge cases
+- [docs/REFACTOR_PLAN_reversible_provenance.md](docs/REFACTOR_PLAN_reversible_provenance.md) - Architecture refactor plan
+- [docs/DESIGN_LESSONS_LEARNED.md](docs/DESIGN_LESSONS_LEARNED.md) - Things that didn't work
 
 ## References
 
-### Document Layout Analysis & OCR
+**Layout Analysis:**
+- Zhao et al. (2024) - DocLayout-YOLO: Enhancing Document Layout Analysis through Diverse Synthetic Data and Global-to-Local Adaptive Perception. arXiv:2410.12628
+- Ptak et al. (2017) - Projection-Based Text Line Segmentation with a Variable Threshold. *Int. J. Applied Math and CS*, 27:195-206
 
-1. Zhao, Z., Kang, H., Wang, B., & He, C. (2024). "DocLayout-YOLO: Enhancing Document Layout Analysis through Diverse Synthetic Data and Global-to-Local Adaptive Perception." arXiv:2410.12628.
-
-2. Ptak, R., Zygadlo, B., Unold, O. (2017). "Projection–Based Text Line Segmentation with a Variable Threshold." *International Journal of Applied Mathematics and Computer Science*, 27:195-206.
-
-3. Dos Santos, R., Clemente, G., Ren, T., Calvalcanti, G. (2009). "Text Line Segmentation Based on Morphology and Histogram Projection."
-
-4. Schneider, P., Maurer, Y. (2020). "Rerunning OCR: A Machine Learning Approach to Quality Assessment and Enhancement Prediction." National Library of Luxembourg.
-
-### Entity Resolution
-
-5. Kirielle, N., Nanayakkara, C., Christen, P., Dibben, C., Williamson, L., Garrett, E., & Manson, C. (2022). "Unsupervised Graph-based Entity Resolution for Accurate and Efficient Family Pedigree Search."
-
-6. Fu, J., Tang, H., Khan, A., Mehrotra, S., Ke, X., & Gao, Y. (2025). "In-context Clustering-based Entity Resolution with Large Language Models: A Design Space Exploration." arXiv:2506.02509v1.
+**Entity Resolution:**
+- Kirielle et al. (2022) - Unsupervised Graph-based Entity Resolution for Accurate and Efficient Family Pedigree Search
+- Fu et al. (2025) - In-context Clustering-based Entity Resolution with Large Language Models. arXiv:2506.02509v1
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT

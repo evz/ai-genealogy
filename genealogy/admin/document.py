@@ -17,11 +17,7 @@ if TYPE_CHECKING:
 from ..models import (
     Document,
     DocumentPage,
-    EntityMerge,
     Event,
-    ParentChildRelationship,
-    Partnership,
-    Person,
     Place,
     PotentialDuplicate,
     TextChunk,

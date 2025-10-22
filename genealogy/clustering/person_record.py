@@ -1,18 +1,18 @@
 """
 PersonRecord class for entity resolution.
 
-Enriches a Person model instance with extracted attributes and relationships
+Enriches a PersonMention model instance with extracted attributes and relationships
 for use in similarity calculation and clustering.
 """
-from typing import Dict
+from typing import Dict, Set
 
-from genealogy.models import Person
+from genealogy.models import PersonMention, MentionToIdentity
 
 
 class PersonRecord:
     """Enriched person record with extracted attributes and relationships"""
 
-    def __init__(self, person: Person):
+    def __init__(self, person: PersonMention):
         self.id = person.id
         self.person = person
 
@@ -51,27 +51,69 @@ class PersonRecord:
         self.child_names = set()
         self.spouse_names = set()
 
-        # Extract parent relationships
+        # Extract parent relationships (merge-aware)
         for rel in person.parent_relationships.all():
-            self.parent_ids.add(rel.parent_id)
+            parent_mention = rel.parent_mention
+
+            # Get all mentions equivalent to this parent (via Identity merges)
+            equivalent_ids = self._get_equivalent_mention_ids(parent_mention)
+            self.parent_ids.update(equivalent_ids)
+
             # Normalize parent name for comparison
-            parent_name = self._normalize_name(rel.parent.given_names, rel.parent.surname)
+            parent_name = self._normalize_name(parent_mention.given_names, parent_mention.surname)
             self.parent_names.add(parent_name)
 
-        # Extract child relationships
+        # Extract child relationships (merge-aware)
         for rel in person.child_relationships.all():
-            self.child_ids.add(rel.child_id)
+            child_mention = rel.child_mention
+
+            # Get all mentions equivalent to this child (via Identity merges)
+            equivalent_ids = self._get_equivalent_mention_ids(child_mention)
+            self.child_ids.update(equivalent_ids)
+
             # Normalize child name for comparison
-            child_name = self._normalize_name(rel.child.given_names, rel.child.surname)
+            child_name = self._normalize_name(child_mention.given_names, child_mention.surname)
             self.child_names.add(child_name)
 
-        # Extract spouse relationships
+        # Extract spouse relationships (merge-aware)
         for partnership in person.partnerships.all():
             for partner in partnership.partners.exclude(id=person.id):
-                self.spouse_ids.add(partner.id)
+                # Get all mentions equivalent to this spouse (via Identity merges)
+                equivalent_ids = self._get_equivalent_mention_ids(partner)
+                self.spouse_ids.update(equivalent_ids)
+
                 # Normalize spouse name for comparison
                 spouse_name = self._normalize_name(partner.given_names, partner.surname)
                 self.spouse_names.add(spouse_name)
+
+    def _get_equivalent_mention_ids(self, mention: PersonMention) -> Set:
+        """
+        Get all PersonMention IDs that are equivalent to the given mention.
+
+        If the mention has been merged into an Identity, returns all mention IDs
+        mapped to that same Identity. Otherwise, returns just the mention's own ID.
+
+        This makes the clustering algorithm "merge-aware" - it understands that
+        multiple PersonMentions can refer to the same real person after merging.
+
+        Args:
+            mention: The PersonMention to find equivalents for
+
+        Returns:
+            Set of PersonMention IDs (UUIDs) that are equivalent to the input mention
+        """
+        try:
+            # Check if this mention has been merged into an Identity
+            mapping = MentionToIdentity.objects.get(mention=mention)
+            identity = mapping.identity
+
+            # Get all mentions mapped to this same Identity
+            equivalent_mappings = MentionToIdentity.objects.filter(identity=identity)
+            return {m.mention_id for m in equivalent_mappings}
+
+        except MentionToIdentity.DoesNotExist:
+            # No merge yet - return just this mention's ID
+            return {mention.id}
 
     def _normalize_name(self, given_names: str, surname: str) -> str:
         """Normalize a name for comparison (lowercase, no spaces)"""

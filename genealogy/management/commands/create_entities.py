@@ -12,13 +12,23 @@ from typing import Optional
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from genealogy.models import Document, Person, Partnership, Event, ParentChildRelationship, TextChunk, Place
+from genealogy.models import (
+    Document,
+    PersonMention,
+    Identity,
+    MentionToIdentity,
+    PartnershipMention,
+    Event,
+    RelationshipMention,
+    TextChunk,
+    Place,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = "Create Person/Partnership/Event entities from extracted chunk data"
+    help = "Create PersonMention/Identity/PartnershipMention/Event entities from extracted chunk data"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -34,7 +44,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--clean',
             action='store_true',
-            help='Delete all existing Person/Partnership/Event records before creating new ones'
+            help='Delete all existing PersonMention/Identity/PartnershipMention/Event records before creating new ones'
         )
 
     def handle(self, *args, **options):
@@ -52,13 +62,15 @@ class Command(BaseCommand):
         # Clean existing entities if requested
         if options['clean']:
             if self.dry_run:
-                self.stdout.write(self.style.WARNING("Would delete existing Person/Partnership/Event records"))
+                self.stdout.write(self.style.WARNING("Would delete existing PersonMention/Identity/PartnershipMention/Event records"))
             else:
                 self.stdout.write("Deleting existing entities...")
                 Event.objects.all().delete()
-                ParentChildRelationship.objects.all().delete()
-                Partnership.objects.all().delete()
-                Person.objects.all().delete()
+                RelationshipMention.objects.all().delete()
+                PartnershipMention.objects.all().delete()
+                MentionToIdentity.objects.all().delete()
+                Identity.objects.all().delete()
+                PersonMention.objects.all().delete()
                 self.stdout.write(self.style.SUCCESS("Existing entities deleted"))
 
         # Get chunks to process
@@ -104,15 +116,15 @@ class Command(BaseCommand):
         parent_names_in_header = self._parse_family_group(chunk.family_groups)
 
         # Track persons created in this chunk for relationship linking
-        chunk_persons = {}  # name -> Person mapping
+        chunk_persons = {}  # name -> PersonMention mapping
 
-        # Step 1: Create/match Person records
+        # Step 1: Create PersonMention records (always create new, never merge)
         for person_name in chunk.extracted_people:
             # Determine this person's generation
             generation = self._determine_generation(person_name, chunk, parent_names_in_header)
 
-            # Create person (always create new, never merge during initial extraction)
-            person = self._create_person(person_name, generation, chunk)
+            # Create person mention and singleton identity
+            person = self._create_person_mention(person_name, generation, chunk)
             chunk_persons[person_name] = person
 
         # Step 1.5: Create Partnership from family group header
@@ -126,8 +138,8 @@ class Command(BaseCommand):
 
             if parent1 and parent2:
                 if not self.dry_run:
-                    # Check if partnership already exists between these two people
-                    existing = Partnership.objects.filter(
+                    # Check if partnership already exists between these two mentions
+                    existing = PartnershipMention.objects.filter(
                         partners=parent1
                     ).filter(
                         partners=parent2
@@ -139,7 +151,7 @@ class Command(BaseCommand):
                         logger.debug(f"Partnership already exists for {parent1_name} and {parent2_name}")
                     else:
                         # Create new partnership from family group header
-                        partnership = Partnership.objects.create(
+                        partnership = PartnershipMention.objects.create(
                             partnership_type='MARRIAGE'
                         )
                         partnership.partners.add(parent1, parent2)
@@ -149,7 +161,7 @@ class Command(BaseCommand):
                 else:
                     self.stats['partnerships_created'] += 1
 
-        # Step 2: Create ParentChildRelationship records
+        # Step 2: Create RelationshipMention records
         for rel in chunk.extracted_relationships:
             person1_name = rel.get('person1')
             person2_name = rel.get('person2')
@@ -157,33 +169,58 @@ class Command(BaseCommand):
 
             if rel_type in ['parent', 'child']:
                 # Determine who is parent and who is child
-                # relationship_type 'parent': person1 is child, person2 is parent
-                # relationship_type 'child': person1 is child, person2 is parent
+                # relationship_type 'parent': person1 IS A parent (of person2)
+                # relationship_type 'child': person1 IS A child (of person2)
                 if rel_type == 'parent':
-                    child = chunk_persons.get(person1_name)
-                    parent = chunk_persons.get(person2_name)
+                    parent_name = person1_name
+                    child_name = person2_name
                 else:  # child
-                    child = chunk_persons.get(person1_name)  # person1 is the child
-                    parent = chunk_persons.get(person2_name)  # person2 is the parent
+                    child_name = person1_name
+                    parent_name = person2_name
+
+                # Get or create mentions for both people
+                parent = chunk_persons.get(parent_name)
+                if not parent and parent_name:
+                    # Create PersonMention on-the-fly for missing parent
+                    logger.warning(f"Creating on-the-fly PersonMention for '{parent_name}' (referenced in relationship but not in extracted_people)")
+                    parent = self._create_person_mention(parent_name, None, chunk)
+                    chunk_persons[parent_name] = parent
+
+                child = chunk_persons.get(child_name)
+                if not child and child_name:
+                    # Create PersonMention on-the-fly for missing child
+                    logger.warning(f"Creating on-the-fly PersonMention for '{child_name}' (referenced in relationship but not in extracted_people)")
+                    child = self._create_person_mention(child_name, None, chunk)
+                    chunk_persons[child_name] = child
 
                 if child and parent:
                     if not self.dry_run:
-                        ParentChildRelationship.objects.get_or_create(
-                            child=child,
-                            parent=parent,
+                        RelationshipMention.objects.get_or_create(
+                            child_mention=child,
+                            parent_mention=parent,
                             defaults={'relationship_type': 'BIOLOGICAL'}
                         )
                     self.stats['parent_child_created'] += 1
 
             elif rel_type == 'spouse':
-                # Create partnership
+                # Create partnership mention
+                # Get or create mentions for both people
                 person1 = chunk_persons.get(person1_name)
+                if not person1 and person1_name:
+                    logger.warning(f"Creating on-the-fly PersonMention for '{person1_name}' (referenced in spouse relationship but not in extracted_people)")
+                    person1 = self._create_person_mention(person1_name, None, chunk)
+                    chunk_persons[person1_name] = person1
+
                 person2 = chunk_persons.get(person2_name)
+                if not person2 and person2_name:
+                    logger.warning(f"Creating on-the-fly PersonMention for '{person2_name}' (referenced in spouse relationship but not in extracted_people)")
+                    person2 = self._create_person_mention(person2_name, None, chunk)
+                    chunk_persons[person2_name] = person2
 
                 if person1 and person2:
                     if not self.dry_run:
-                        # Check if partnership already exists between these two people
-                        existing = Partnership.objects.filter(
+                        # Check if partnership already exists between these two mentions
+                        existing = PartnershipMention.objects.filter(
                             partners=person1
                         ).filter(
                             partners=person2
@@ -193,8 +230,8 @@ class Command(BaseCommand):
                             # Add source document if not already there
                             existing.source_documents.add(chunk.document)
                         else:
-                            # Create new partnership
-                            partnership = Partnership.objects.create(
+                            # Create new partnership mention
+                            partnership = PartnershipMention.objects.create(
                                 partnership_type='MARRIAGE'
                             )
                             partnership.partners.add(person1, person2)
@@ -221,7 +258,7 @@ class Command(BaseCommand):
                 place_name = event_data.get('place', '')
 
                 # Parse date
-                date_obj = self._parse_date(date_str) if date_str else None
+                date_obj, date_estimated = self._parse_date(date_str) if date_str else (None, False)
 
                 # Get or create place
                 place_obj = None
@@ -232,10 +269,10 @@ class Command(BaseCommand):
                     # Use get_or_create to avoid duplicates
                     event, created = Event.objects.get_or_create(
                         event_type=event_type,
-                        person=person,
+                        mention=person,
                         date=date_obj,
                         place=place_obj,
-                        defaults={}
+                        defaults={'date_estimated': date_estimated}
                     )
                     if created:
                         self.stats['events_created'] += 1
@@ -330,26 +367,41 @@ class Command(BaseCommand):
         # Default: chunk generation
         return chunk.generation_number
 
-    def _create_person(self, name: str, generation: int, chunk: TextChunk) -> Person:
+    def _create_person_mention(self, name: str, generation: int, chunk: TextChunk) -> PersonMention:
         """
-        Create a new Person record - never merges.
+        Create a new PersonMention record and singleton Identity.
 
-        All deduplication happens later via the detect_duplicates command.
+        Each mention gets its own Identity initially.
+        All deduplication happens later via the cluster_entities command.
         """
         # Parse name into parts
         given_names, surname = self._parse_name(name)
 
         if not self.dry_run:
-            person = Person.objects.create(
+            # Create the immutable person mention
+            person = PersonMention.objects.create(
                 given_names=given_names,
                 surname=surname,
                 generation=generation,
             )
             person.source_documents.add(chunk.document)
             person.source_chunks.add(chunk)
+
+            # Create singleton Identity for this mention
+            identity = Identity.objects.create(
+                display_name=person.full_name,
+                notes=f"Auto-created for {person.full_name}"
+            )
+
+            # Create the mapping
+            MentionToIdentity.objects.create(
+                mention=person,
+                identity=identity,
+                mapped_by="AUTO"
+            )
         else:
             # In dry run, create temporary person object
-            person = Person(
+            person = PersonMention(
                 given_names=given_names,
                 surname=surname,
                 generation=generation,
@@ -395,10 +447,64 @@ class Command(BaseCommand):
 
         return given_names, surname
 
-    def _parse_date(self, date_str: str) -> Optional[datetime]:
-        """Parse date string to date object"""
+    def _parse_date(self, date_str: str) -> tuple[Optional[datetime], bool]:
+        """
+        Parse date string to date object.
+
+        Returns:
+            tuple: (date_object, is_estimated)
+                - date_object: parsed date or None
+                - is_estimated: True if date was uncertain/estimated
+        """
         if not date_str:
-            return None
+            return None, False
+
+        import re
+
+        # Check for uncertainty indicators
+        is_estimated = False
+        date_str = date_str.strip()
+
+        # English uncertainty words
+        english_uncertain = ['circa', 'c.', 'ca.', 'about', 'around', 'approx', 'before', 'after', 'early', 'late', 'mid']
+
+        # Dutch uncertainty words
+        dutch_uncertain = [
+            'omstreeks', 'ca', 'voor', 'vóór', 'na', 'rond', 'ongeveer',
+            'begin', 'eind', 'midden', 'vroeg', 'laat'
+        ]
+
+        # Check for < and > symbols
+        if '<' in date_str or '>' in date_str:
+            is_estimated = True
+            date_str = date_str.replace('<', '').replace('>', '').strip()
+
+        # Check for uncertainty indicators
+        lower = date_str.lower()
+        all_uncertain = english_uncertain + dutch_uncertain
+        if any(word in lower for word in all_uncertain):
+            is_estimated = True
+
+        # Handle ranges: "1746 or 1747", "1746/1747", "1746-1747"
+        if ' or ' in lower or ' of ' in lower:
+            is_estimated = True
+
+        # Extract first reasonable year/date from uncertain strings
+        cleaned_date = date_str
+
+        # Handle "YYYY or YYYY" or "YYYY/YYYY" or "YYYY-YYYY" patterns (ranges)
+        # Extract first year
+        year_match = re.search(r'\b(\d{4})\b', date_str)
+        if year_match and (' or ' in lower or ' of ' in lower or re.search(r'\d{4}[/-]\d{4}', date_str)):
+            cleaned_date = year_match.group(1)
+            is_estimated = True
+
+        # Remove uncertainty words to clean the date
+        for word in all_uncertain:
+            cleaned_date = re.sub(r'\b' + re.escape(word) + r'\b', '', cleaned_date, flags=re.IGNORECASE).strip()
+
+        # Clean up extra whitespace
+        cleaned_date = re.sub(r'\s+', ' ', cleaned_date).strip()
 
         # Try various formats
         formats = [
@@ -409,8 +515,9 @@ class Command(BaseCommand):
 
         for fmt in formats:
             try:
-                return datetime.strptime(date_str, fmt).date()
+                return datetime.strptime(cleaned_date, fmt).date(), is_estimated
             except ValueError:
                 continue
 
-        return None
+        # If we couldn't parse, return None but preserve the estimated flag if we detected uncertainty
+        return None, is_estimated

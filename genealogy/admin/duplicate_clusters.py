@@ -1,5 +1,6 @@
 import logging
 from collections import defaultdict
+from uuid import UUID
 
 from django.contrib import admin, messages
 from django.db import transaction
@@ -8,13 +9,13 @@ from django.urls import path, reverse
 from django.utils import timezone
 
 from ..models import (
-    EntityMerge,
-    Event,
-    ParentChildRelationship,
-    Partnership,
-    Person,
+    Identity,
+    MentionToIdentity,
+    MergeEvent,
+    PersonMention,
     PotentialDuplicate,
 )
+from .merge_logic import merge_mentions, unmerge_mentions
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ class PotentialDuplicateAdmin(admin.ModelAdmin):
     # Keep minimal list display - we'll override changelist_view to show clusters
     list_display = ['__str__']
     list_filter = ['review_status', MatchReasonFilter]
-    search_fields = ['person1__given_names', 'person1__surname', 'person2__given_names', 'person2__surname']
+    search_fields = ['mention1__given_names', 'mention1__surname', 'mention2__given_names', 'mention2__surname']
 
     # We'll hide the default list view and show custom cluster view instead
     def has_add_permission(self, request):
@@ -104,8 +105,8 @@ class PotentialDuplicateAdmin(admin.ModelAdmin):
         pair_data = {}  # (p1_id, p2_id) -> {'confidence': ..., 'reasons': ...}
 
         for dup in PotentialDuplicate.objects.filter(review_status=review_status):
-            p1_id = dup.person1_id
-            p2_id = dup.person2_id
+            p1_id = dup.mention1_id
+            p2_id = dup.mention2_id
             connections[p1_id].add(p2_id)
             connections[p2_id].add(p1_id)
 
@@ -199,7 +200,7 @@ class PotentialDuplicateAdmin(admin.ModelAdmin):
 
         # Enrich clusters with Person objects for display
         for cluster in clusters:
-            cluster['persons'] = list(Person.objects.filter(
+            cluster['persons'] = list(PersonMention.objects.filter(
                 id__in=cluster['person_ids']
             ).order_by('given_names', 'surname'))
 
@@ -245,30 +246,34 @@ class PotentialDuplicateAdmin(admin.ModelAdmin):
         cluster = clusters[cluster_id]
 
         # Get Person objects for all members
-        persons = Person.objects.filter(id__in=cluster['person_ids']).prefetch_related(
+        from django.db.models import Count
+        persons = PersonMention.objects.filter(id__in=cluster['person_ids']).prefetch_related(
             'events',
             'events__place',
             'parent_relationships',
-            'parent_relationships__parent',
+            'parent_relationships__parent_mention',
             'child_relationships',
-            'child_relationships__child',
+            'child_relationships__child_mention',
             'source_chunks',
-            'source_documents'
+            'source_documents',
+            'mentiontoidentity__identity__mention_mappings'
+        ).annotate(
+            mention_count=Count('mentiontoidentity__identity__mention_mappings')
         ).order_by('given_names', 'surname')
 
         # Get pairwise similarity matrix and format it for easy template access
-        # Create a lookup dict: {(person1_id, person2_id): similarity_data}
+        # Create a lookup dict: {(mention1_id, mention2_id): similarity_data}
         similarity_lookup = {}
         for dup in PotentialDuplicate.objects.filter(
-            person1_id__in=cluster['person_ids'],
-            person2_id__in=cluster['person_ids']
+            mention1_id__in=cluster['person_ids'],
+            mention2_id__in=cluster['person_ids']
         ):
             # Store in both directions for easy lookup
-            similarity_lookup[(dup.person1_id, dup.person2_id)] = {
+            similarity_lookup[(dup.mention1_id, dup.mention2_id)] = {
                 'confidence': dup.confidence_score,
                 'reasons': dup.match_reasons or []
             }
-            similarity_lookup[(dup.person2_id, dup.person1_id)] = {
+            similarity_lookup[(dup.mention2_id, dup.mention1_id)] = {
                 'confidence': dup.confidence_score,
                 'reasons': dup.match_reasons or []
             }
@@ -301,7 +306,7 @@ class PotentialDuplicateAdmin(admin.ModelAdmin):
         return render(request, 'admin/genealogy/potentialduplicate/cluster_detail.html', context)
 
     def cluster_merge_view(self, request, cluster_id):
-        """Merge all persons in a cluster into one"""
+        """Show merge confirmation page or process merge"""
         clusters = self._compute_clusters(review_status='PENDING')
 
         if cluster_id >= len(clusters):
@@ -310,8 +315,32 @@ class PotentialDuplicateAdmin(admin.ModelAdmin):
 
         cluster = clusters[cluster_id]
 
-        # Get Person objects
-        persons = list(Person.objects.filter(id__in=cluster['person_ids']).prefetch_related(
+        # Check if this is the final merge submission (has 'confirm_merge' in POST)
+        if request.method == 'POST' and 'confirm_merge' in request.POST:
+            # Get all persons in cluster
+            persons = list(PersonMention.objects.filter(id__in=cluster['person_ids']).prefetch_related(
+                'events',
+                'parent_relationships',
+                'child_relationships',
+                'partnerships',
+                'source_chunks',
+                'source_documents'
+            ).order_by('given_names', 'surname'))
+            return self._process_cluster_merge(request, cluster, persons)
+
+        # Otherwise, show the confirmation page
+        # Get selected person IDs (from detail page checkboxes)
+        if request.method == 'POST':
+            selected_ids = [UUID(mid) for mid in request.POST.getlist('persons_to_merge')]
+            if len(selected_ids) < 2:
+                messages.error(request, "Please select at least 2 persons to merge.")
+                return redirect('admin:genealogy_potentialduplicate_cluster_detail', cluster_id=cluster_id)
+        else:
+            # If GET request, merge all persons in cluster
+            selected_ids = cluster['person_ids']
+
+        # Get Person objects for selected mentions
+        persons = list(PersonMention.objects.filter(id__in=selected_ids).prefetch_related(
             'events',
             'parent_relationships',
             'child_relationships',
@@ -319,9 +348,6 @@ class PotentialDuplicateAdmin(admin.ModelAdmin):
             'source_chunks',
             'source_documents'
         ).order_by('given_names', 'surname'))
-
-        if request.method == 'POST':
-            return self._process_cluster_merge(request, cluster, persons)
 
         context = {
             'title': f'Merge Cluster #{cluster_id}',
@@ -346,8 +372,8 @@ class PotentialDuplicateAdmin(admin.ModelAdmin):
         # Mark all pairs in this cluster as REJECTED
         affected = 0
         for dup in PotentialDuplicate.objects.filter(
-            person1_id__in=cluster['person_ids'],
-            person2_id__in=cluster['person_ids'],
+            mention1_id__in=cluster['person_ids'],
+            mention2_id__in=cluster['person_ids'],
             review_status='PENDING'
         ):
             dup.review_status = 'REJECTED'
@@ -363,191 +389,90 @@ class PotentialDuplicateAdmin(admin.ModelAdmin):
         return redirect('admin:genealogy_potentialduplicate_cluster_list')
 
     def _process_cluster_merge(self, request, cluster, persons):
-        """Process the multi-person merge form"""
+        """Process the multi-person merge form using new reversible architecture"""
         try:
-            with transaction.atomic():
-                # Get selected persons to merge (may be subset of cluster)
-                persons_to_merge_ids = request.POST.getlist('persons_to_merge')
+            # Get selected mentions to merge (may be subset of cluster)
+            mention_ids_to_merge = [UUID(mid) for mid in request.POST.getlist('persons_to_merge')]
 
-                if len(persons_to_merge_ids) < 2:
-                    messages.error(request, "Please select at least 2 persons to merge.")
-                    return redirect('admin:genealogy_potentialduplicate_cluster_merge', cluster_id=cluster['id'])
+            if len(mention_ids_to_merge) < 2:
+                messages.error(request, "Please select at least 2 persons to merge.")
+                return redirect('admin:genealogy_potentialduplicate_cluster_merge', cluster_id=cluster['id'])
 
-                # Filter to only the selected persons
-                selected_persons = [p for p in persons if str(p.id) in persons_to_merge_ids]
+            # Build merge reason from PotentialDuplicate data
+            confidences = []
+            all_reasons = set()
+            for dup in PotentialDuplicate.objects.filter(
+                mention1_id__in=mention_ids_to_merge,
+                mention2_id__in=mention_ids_to_merge
+            ):
+                confidences.append(dup.confidence_score)
+                all_reasons.update(dup.match_reasons or [])
 
-                # Get base person (must be one of the selected persons)
-                base_person_id = request.POST.get('base_person')
-                if base_person_id not in persons_to_merge_ids:
-                    messages.error(request, "Base person must be one of the selected persons to merge.")
-                    return redirect('admin:genealogy_potentialduplicate_cluster_merge', cluster_id=cluster['id'])
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 100.0
 
-                # Get the base person to copy attributes from
-                base_person = Person.objects.get(id=base_person_id)
+            merge_reason = {
+                'cluster_id': cluster['id'],
+                'cluster_size': len(mention_ids_to_merge),
+                'avg_confidence': avg_confidence,
+                'match_reasons': list(all_reasons),
+                'merged_via': 'admin_ui'
+            }
 
-                # Create a NEW canonical entity (don't modify the original)
-                canonical_person = Person.objects.create(
-                    entity_type='CANONICAL',
-                    given_names=request.POST.get('given_names', base_person.given_names),
-                    surname=request.POST.get('surname', base_person.surname),
-                    maiden_name=request.POST.get('maiden_name', base_person.maiden_name or ''),
-                    gender=request.POST.get('gender', base_person.gender),
-                    genealogical_id=request.POST.get('genealogical_id', base_person.genealogical_id or ''),
-                    generation=int(request.POST.get('generation', base_person.generation or 0)) if request.POST.get('generation') else None
-                )
+            # Perform the merge using our simple new logic!
+            target_identity = merge_mentions(
+                mention_ids=mention_ids_to_merge,
+                target_identity_id=None,  # Create new identity
+                merged_by=request.user.username,
+                merge_reason=merge_reason
+            )
 
-                # Build pairwise confidence lookup from PotentialDuplicate records
-                pairwise_confidences = {}
+            # Mark PotentialDuplicate pairs WITHIN the merged set as MERGED
+            merged_count = 0
+            for dup in PotentialDuplicate.objects.filter(
+                mention1_id__in=mention_ids_to_merge,
+                mention2_id__in=mention_ids_to_merge
+            ):
+                dup.review_status = 'MERGED'
+                dup.reviewed_by = request.user.username
+                dup.reviewed_at = timezone.now()
+                dup.save()
+                merged_count += 1
+
+            # If this was a SUBSET of the cluster, mark pairs between merged and non-merged as REJECTED
+            all_cluster_ids = set(cluster['person_ids'])
+            non_merged_ids = all_cluster_ids - set(mention_ids_to_merge)
+
+            rejected_count = 0
+            if non_merged_ids:
+                # Mark pairs between merged mentions and non-merged mentions as REJECTED
                 for dup in PotentialDuplicate.objects.filter(
-                    person1_id__in=persons_to_merge_ids,
-                    person2_id__in=persons_to_merge_ids
+                    mention1_id__in=mention_ids_to_merge,
+                    mention2_id__in=non_merged_ids,
+                    review_status='PENDING'
                 ):
-                    key1 = (str(dup.person1_id), str(dup.person2_id))
-                    key2 = (str(dup.person2_id), str(dup.person1_id))
-                    pairwise_confidences[key1] = {
-                        'confidence': dup.confidence_score,
-                        'reasons': dup.match_reasons or []
-                    }
-                    pairwise_confidences[key2] = {
-                        'confidence': dup.confidence_score,
-                        'reasons': dup.match_reasons or []
-                    }
-
-                # Process ALL selected persons (including the base) as sources
-                for source_person in selected_persons:
-                    # Copy source documents and chunks to canonical
-                    canonical_person.source_documents.add(*source_person.source_documents.all())
-                    canonical_person.source_chunks.add(*source_person.source_chunks.all())
-
-                    # Copy events to canonical (create new Event records pointing to canonical)
-                    for event in source_person.events.all():
-                        # Create a copy of the event for the canonical person
-                        Event.objects.create(
-                            event_type=event.event_type,
-                            person=canonical_person,
-                            date=event.date,
-                            date_estimated=event.date_estimated,
-                            place=event.place,
-                            description=event.description
-                        )
-
-                    # Copy parent relationships to canonical
-                    for rel in source_person.parent_relationships.all():
-                        # Use canonical entity if parent has been merged, otherwise use original
-                        parent_to_use = rel.parent.canonical_entity if rel.parent.canonical_entity else rel.parent
-
-                        # Check if canonical already has this parent
-                        if not ParentChildRelationship.objects.filter(
-                            child=canonical_person, parent=parent_to_use
-                        ).exists():
-                            ParentChildRelationship.objects.create(
-                                child=canonical_person,
-                                parent=parent_to_use,
-                                relationship_type=rel.relationship_type,
-                                partnership=rel.partnership
-                            )
-
-                    # Copy child relationships to canonical
-                    for rel in source_person.child_relationships.all():
-                        # Use canonical entity if child has been merged, otherwise use original
-                        child_to_use = rel.child.canonical_entity if rel.child.canonical_entity else rel.child
-
-                        if not ParentChildRelationship.objects.filter(
-                            parent=canonical_person, child=child_to_use
-                        ).exists():
-                            ParentChildRelationship.objects.create(
-                                parent=canonical_person,
-                                child=child_to_use,
-                                relationship_type=rel.relationship_type,
-                                partnership=rel.partnership
-                            )
-
-                    # Copy partnerships to canonical
-                    for partnership in source_person.partnerships.all():
-                        # Get the other partner(s) in this partnership
-                        # Use canonical entities if partners have been merged
-                        other_partners = []
-                        for p in partnership.partners.all():
-                            if p.id != source_person.id:
-                                partner_to_use = p.canonical_entity if p.canonical_entity else p
-                                other_partners.append(partner_to_use)
-
-                        # Check if canonical already has a partnership with these same partners
-                        existing_partnership = None
-                        for cp_partnership in canonical_person.partnerships.all():
-                            cp_partners = set(p.id for p in cp_partnership.partners.all() if p.id != canonical_person.id)
-                            other_partner_ids = set(p.id for p in other_partners)
-                            if cp_partners == other_partner_ids:
-                                existing_partnership = cp_partnership
-                                break
-
-                        if not existing_partnership and other_partners:
-                            # Create new partnership for canonical
-                            new_partnership = Partnership.objects.create(
-                                partnership_type=partnership.partnership_type,
-                                start_date=partnership.start_date,
-                                start_date_estimated=partnership.start_date_estimated,
-                                start_place=partnership.start_place,
-                                end_date=partnership.end_date,
-                                end_date_estimated=partnership.end_date_estimated,
-                                end_reason=partnership.end_reason
-                            )
-                            new_partnership.partners.add(canonical_person, *other_partners)
-
-                    # Build pairwise similarities for this source entity
-                    # (similarities with all OTHER sources in the cluster)
-                    pairwise_sims = {}
-                    for other_source in selected_persons:
-                        if other_source.id != source_person.id:
-                            key = (str(source_person.id), str(other_source.id))
-                            if key in pairwise_confidences:
-                                pairwise_sims[str(other_source.id)] = pairwise_confidences[key]['confidence']
-
-                    # Get confidence for this specific source -> canonical pairing
-                    # Use the confidence with the base_person as a representative score
-                    key = (str(source_person.id), base_person_id)
-                    pair_data = pairwise_confidences.get(key, {'confidence': 100.0, 'reasons': ['manual_merge']})
-
-                    # Create EntityMerge record tracking this source -> canonical merge
-                    EntityMerge.objects.create(
-                        canonical_entity=canonical_person,
-                        source_entity=source_person,
-                        confidence_score=pair_data['confidence'],
-                        pairwise_similarities=pairwise_sims,
-                        merge_algorithm='manual',
-                        merge_reason={
-                            'match_reasons': pair_data['reasons'],
-                            'cluster_id': cluster['id'],
-                            'cluster_size': len(selected_persons),
-                            'base_person_id': base_person_id
-                        },
-                        merged_by=request.user.username,
-                        merged_at=timezone.now()
-                    )
-
-                    # Mark source person as merged
-                    source_person.canonical_entity = canonical_person
-                    source_person.save()
-
-                # Mark pairs involving merged persons as MERGED
-                merged_person_ids = [p.id for p in selected_persons]
-                for dup in PotentialDuplicate.objects.filter(
-                    person1_id__in=merged_person_ids,
-                    person2_id__in=merged_person_ids
-                ):
-                    dup.review_status = 'MERGED'
+                    dup.review_status = 'REJECTED'
                     dup.reviewed_by = request.user.username
                     dup.reviewed_at = timezone.now()
                     dup.save()
+                    rejected_count += 1
 
-                # If not all persons in cluster were merged, keep remaining pairs as PENDING
-                # (they might need separate review)
+                for dup in PotentialDuplicate.objects.filter(
+                    mention1_id__in=non_merged_ids,
+                    mention2_id__in=mention_ids_to_merge,
+                    review_status='PENDING'
+                ):
+                    dup.review_status = 'REJECTED'
+                    dup.reviewed_by = request.user.username
+                    dup.reviewed_at = timezone.now()
+                    dup.save()
+                    rejected_count += 1
 
-                messages.success(
-                    request,
-                    f"Successfully merged {len(selected_persons)} persons into new canonical entity: {canonical_person.full_name}"
-                )
-                return redirect('admin:genealogy_potentialduplicate_cluster_list')
+            success_msg = f"Successfully merged {len(mention_ids_to_merge)} mentions into identity: {target_identity.display_name}"
+            if rejected_count > 0:
+                success_msg += f" (and marked {rejected_count} pairs with non-merged mentions as REJECTED)"
+
+            messages.success(request, success_msg)
+            return redirect('admin:genealogy_potentialduplicate_cluster_list')
 
         except Exception as e:
             messages.error(request, f"Error during merge: {e}")
