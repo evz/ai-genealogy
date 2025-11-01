@@ -1,4 +1,4 @@
-.PHONY: help install install-dev lint format type-check security test test-fast clean build up down logs shell migrate createsuperuser collectstatic reset-db docker-test quality-gate pre-commit setup
+.PHONY: help install install-dev lint format type-check security test test-fast clean build up down logs shell migrate createsuperuser reset-db quality-gate pre-commit setup
 
 # Colors for output
 YELLOW := \033[1;33m
@@ -103,10 +103,6 @@ createsuperuser: ensure-containers ## Create Django superuser in Docker
 	@echo "$(YELLOW)👤 Creating Django superuser in Docker...$(NC)"
 	docker compose exec web python manage.py createsuperuser
 
-collectstatic: ensure-containers ## Collect static files in Docker
-	@echo "$(YELLOW)📁 Collecting static files in Docker...$(NC)"
-	docker compose exec web python manage.py collectstatic --noinput
-
 runserver: ensure-containers ## Run Django development server (use 'make up' instead)
 	@echo "$(YELLOW)🌐 Django server is running in Docker at http://localhost:8000$(NC)"
 	@echo "$(YELLOW)💡 Use 'make logs-web' to view logs$(NC)"
@@ -123,12 +119,6 @@ test: ensure-containers ## Run all tests in Docker
 test-fast: ensure-containers ## Run tests with faster settings in Docker
 	@echo "$(YELLOW)⚡ Running tests (fast mode) in Docker...$(NC)"
 	docker compose exec web python manage.py test genealogy.tests --parallel --keepdb
-
-test-coverage: ensure-containers ## Run tests with coverage report in Docker
-	@echo "$(YELLOW)📊 Running tests with coverage in Docker...$(NC)"
-	docker compose exec web coverage run --source='.' manage.py test genealogy.tests
-	docker compose exec web coverage report
-	docker compose exec web coverage html
 
 test-models: ensure-containers ## Run only model tests in Docker
 	@echo "$(YELLOW)🗃️ Running model tests in Docker...$(NC)"
@@ -270,21 +260,6 @@ clean-docker: ## Clean up Docker containers and images
 	docker compose down --rmi all --volumes --remove-orphans
 
 ##@ Development Workflow
-demo: ## Complete demo setup (build, start, process sample PDFs)
-	@echo "$(YELLOW)🚀 Setting up complete OCR extraction demo...$(NC)"
-	@if [ ! -f .env ]; then \
-		echo "$(YELLOW)📄 Copying .env.example to .env...$(NC)"; \
-		cp .env.example .env; \
-	fi
-	$(MAKE) up-build
-	@echo "$(YELLOW)⏳ Waiting for services to be ready...$(NC)"
-	sleep 15
-	@echo "$(YELLOW)🧪 Running OCR demo with sample PDFs...$(NC)"
-	docker compose exec web python manage.py demo_ocr --clear
-	@echo "$(GREEN)✅ Demo complete!$(NC)"
-	@echo "$(GREEN)🌐 Access the application at: http://localhost:8000/admin/ (admin/admin)$(NC)"
-	@echo "$(GREEN)📋 View processed documents at: http://localhost:8000/admin/genealogy/document/$(NC)"
-
 dev-setup: ## Complete development setup (Docker + dependencies)
 	@echo "$(YELLOW)🏗️ Setting up development environment...$(NC)"
 	$(MAKE) install-dev

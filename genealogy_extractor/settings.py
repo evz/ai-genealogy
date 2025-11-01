@@ -14,8 +14,13 @@ import os
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -144,9 +149,6 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 
-# Document Layout Detection Model Path
-DOCLAYOUT_MODEL_PATH = os.environ["DOCLAYOUT_MODEL_PATH"]
-
 # Ollama configuration for embeddings
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
 OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
@@ -154,6 +156,10 @@ OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text-v
 
 # NER Model Configuration
 NER_MODEL_PATH = os.getenv("NER_MODEL_PATH", "models/genealogy_ner_20250920_150219")
+
+# DeepSeek-OCR configuration
+DEEPSEEK_OCR_HOST = os.getenv("DEEPSEEK_OCR_HOST", "localhost")
+DEEPSEEK_OCR_PORT = int(os.getenv("DEEPSEEK_OCR_PORT", "5555"))
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

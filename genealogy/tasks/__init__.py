@@ -4,20 +4,22 @@ Genealogy tasks package
 This package contains all Celery tasks for processing genealogy documents.
 Tasks are organized by functionality:
 - ocr: OCR processing tasks
-- extraction: Text chunking and entity extraction tasks
-- chunking: Text chunking logic (GenealogyChunker class)
+- chunking: Text chunking tasks (book-level hierarchical chunking)
+- extraction: Entity extraction tasks (LLM-based entity extraction)
 """
 
 # Import all tasks for backward compatibility
-from .extraction import create_document_chunks, extract_entities_from_chunks, extract_entities_from_chunk
+from .chunking import create_document_chunks
+from .extraction import extract_entities_from_chunks, extract_entities_from_chunk
 from .ocr import process_document_ocr, process_page_ocr
 
 __all__ = [
     # OCR tasks
     "process_page_ocr",
     "process_document_ocr",
-    # Extraction tasks
+    # Chunking tasks
     "create_document_chunks",
+    # Extraction tasks
     "extract_entities_from_chunks",
     # Utility functions
     "extract_entities_from_chunk",

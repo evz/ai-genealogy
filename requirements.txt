@@ -14,8 +14,6 @@ transformers==4.55.4
 scikit-learn==1.7.1
 datasets==4.0.0
 accelerate>=0.26.0
-spacy==3.8.2
-doclayout_yolo==0.0.4
 kornia==0.8.1
 shapely==2.0.6
 pgvector==0.3.6
@@ -23,6 +21,8 @@ abydos==0.5.0
 anthropic==0.40.0
 probablepeople==0.5.4
 python-Levenshtein==0.27.1
+pyzmq==26.2.0
+python-dotenv==1.0.1
 
 # Development dependencies
 ruff==0.8.4

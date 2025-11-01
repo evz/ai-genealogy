@@ -30,13 +30,13 @@ class OCRTaskTests(TestCase):
             image_file=self.test_file,
         )
 
-    @patch("genealogy.tasks.RegionOCRProcessor")
-    @patch("genealogy.tasks.DocumentLayoutDetector")
+    @patch("genealogy.tasks.SmallModelProcessor")
+    @patch("genealogy.tasks.DeepSeekOCRProcessor")
     @patch("genealogy.tasks.RotationDetector")
     @patch("genealogy.tasks.Image.open")
     @patch("genealogy.tasks.os.path.exists")
     def test_process_page_ocr_success(
-        self, mock_exists, mock_image_open, mock_rotation_class, mock_layout_class, mock_ocr_class
+        self, mock_exists, mock_image_open, mock_rotation_class, mock_ocr_class, mock_small_model_class
     ):
         """process_page_ocr should complete successfully and update page"""
         # Mock file exists
@@ -51,15 +51,15 @@ class OCRTaskTests(TestCase):
         mock_rotation_detector.detect_and_correct.return_value = (mock_image, 0.5)
         mock_rotation_class.return_value = mock_rotation_detector
 
-        # Mock layout detector
-        mock_layout_detector = Mock()
-        mock_layout_detector.detect_regions.return_value = [{"bbox": [0, 0, 100, 100], "element": "text"}]
-        mock_layout_class.return_value = mock_layout_detector
-
-        # Mock OCR processor
+        # Mock OCR processor (DeepSeek returns only text, no confidence)
         mock_ocr_processor = Mock()
-        mock_ocr_processor.process_regions.return_value = ("Extracted text content", 85.5)
+        mock_ocr_processor.process_page.return_value = "Extracted text content"
         mock_ocr_class.return_value = mock_ocr_processor
+
+        # Mock small model processor
+        mock_small_model = Mock()
+        mock_small_model.clean_ocr_genealogy_ids.return_value = ["Extracted text content"]
+        mock_small_model_class.return_value = mock_small_model
 
         # Run task
         result = process_page_ocr(str(self.page.id))
@@ -67,15 +67,15 @@ class OCRTaskTests(TestCase):
         # Check result
         self.assertTrue(result["success"])
         self.assertEqual(result["text"], "Extracted text content")
-        self.assertEqual(result["confidence"], 85.5)
+        self.assertNotIn("confidence", result)  # DeepSeek doesn't provide confidence
         self.assertEqual(result["rotation_applied"], 0.5)
 
         # Check page was updated
         self.page.refresh_from_db()
         self.assertTrue(self.page.ocr_completed)
         self.assertEqual(self.page.ocr_text, "Extracted text content")
-        self.assertEqual(self.page.ocr_confidence, 85.5)
-        self.assertEqual(self.page.rotation_applied, 0.0)
+        self.assertIsNone(self.page.ocr_confidence)  # DeepSeek doesn't provide confidence
+        self.assertEqual(self.page.rotation_applied, 0.5)
 
         # Check document status was updated
         self.document.refresh_from_db()
@@ -101,7 +101,7 @@ class OCRTaskTests(TestCase):
         # Mark page as completed
         self.page.ocr_completed = True
         self.page.ocr_text = "Existing text"
-        self.page.ocr_confidence = 90.0
+        self.page.ocr_confidence = None
         self.page.save()
 
         result = process_page_ocr(str(self.page.id))
@@ -109,7 +109,7 @@ class OCRTaskTests(TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(result["message"], "Already processed")
         self.assertEqual(result["text"], "Existing text")
-        self.assertEqual(result["confidence"], 90.0)
+        self.assertEqual(result["confidence"], None)
 
     @patch("genealogy.tasks.os.path.exists")
     def test_process_page_ocr_file_not_found(self, mock_exists):

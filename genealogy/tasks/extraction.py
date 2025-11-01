@@ -8,7 +8,6 @@ from celery import shared_task
 from ..models import Document, TextChunk
 from ..ollama_utils import OllamaClient, get_default_models
 from ..prompts import build_extraction_prompt, parse_extraction_output
-from .chunking import GenealogyChunker
 
 logger = logging.getLogger(__name__)
 
@@ -101,100 +100,6 @@ def extract_entities_from_chunk(chunk, ollama, model):
         return {
             'success': False,
             'error': str(e)
-        }
-
-
-@shared_task(bind=True)
-def create_document_chunks(self, document_id: str):  # noqa: ARG001
-    """
-    Phase 1: Create text chunks with genealogical anchors for a document
-
-    Args:
-        document_id: UUID string of the Document to chunk
-
-    Returns:
-        dict: Chunking result summary
-    """
-    try:
-        # Get the document
-        document = Document.objects.get(id=document_id)
-        logger.info(f"Starting chunking for document {document}")
-
-        if not document.ocr_completed:
-            return {
-                "success": False,
-                "error": "Document OCR must be completed before chunking",
-                "document_id": str(document_id),
-            }
-
-        # Clear existing chunks for this document
-        document.text_chunks.all().delete()
-
-        # Create chunks
-        chunker = GenealogyChunker()
-        chunk_data = chunker.chunk_document_text(document)
-
-        chunks_created = 0
-        for sequence_num, chunk_dict in enumerate(chunk_data, 1):
-            # For header chunks, store the clean header text
-            generation_header = ""
-            if chunk_dict["chunk_type"] == "HEADER":
-                generation_header = chunk_dict["text_content"]  # Clean header text
-                logger.info(f"HEADER chunk: generation_header length={len(generation_header)}, text='{generation_header}'")
-
-            # Log field lengths for debugging varchar(100) limits
-            for field_name in ['family_groups']:
-                field_value = chunk_dict.get(field_name, [])
-                for item in field_value:
-                    if len(item) > 100:
-                        logger.warning(f"Field {field_name} has item exceeding 100 chars (len={len(item)}): {item}")
-
-            TextChunk.objects.create(
-                document=document,
-                text_content=chunk_dict["text_content"],
-                chunk_type=chunk_dict["chunk_type"],
-                start_page=chunk_dict["start_page"],
-                end_page=chunk_dict["end_page"],
-                sequence_number=sequence_num,
-                generation_number=chunk_dict["generation_number"],
-                generation_header=generation_header,
-                family_groups=chunk_dict["family_groups"],
-                extraction_method=chunk_dict["extraction_method"],
-            )
-            chunks_created += 1
-
-        logger.info(f"Created {chunks_created} chunks for document {document}")
-
-        return {
-            "success": True,
-            "message": f"Created {chunks_created} text chunks",
-            "document_id": str(document_id),
-            "chunks_created": chunks_created,
-        }
-
-    except ValidationError:
-        error_msg = f"Invalid UUID format: {document_id}"
-        logger.exception(error_msg)
-        return {
-            "success": False,
-            "error": error_msg,
-        }
-
-    except Document.DoesNotExist:
-        error_msg = f"Document with id {document_id} not found"
-        logger.exception(error_msg)
-        return {
-            "success": False,
-            "error": error_msg,
-        }
-
-    except Exception as e:
-        error_msg = f"Document chunking failed for {document_id}: {e!s}"
-        logger.error(error_msg, exc_info=True)
-        return {
-            "success": False,
-            "error": error_msg,
-            "document_id": str(document_id),
         }
 
 

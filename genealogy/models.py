@@ -93,6 +93,123 @@ class Document(models.Model):
         )
 
 
+class BookSection(models.Model):
+    """
+    Defines a section of a book with specific processing requirements.
+
+    Allows flexible configuration of how different page ranges should be processed
+    during chunking and entity extraction.
+    """
+
+    SECTION_TYPES = [
+        ("FRONT_MATTER", "Front Matter (no processing)"),
+        ("DESCENDANT_GENEALOGY", "Descendant Genealogy (main processing)"),
+        ("KWARTIERSTATEN", "Kwartierstaten/Ancestor Tables"),
+        ("APPENDIX_NARRATIVE", "Appendix Narrative (no processing)"),
+        ("GLOSSARY", "Glossary (no processing)"),
+        ("INDEX", "Index (future: 6-column processing)"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(
+        Document,
+        on_delete=models.CASCADE,
+        related_name="book_sections",
+        help_text="The document this section belongs to"
+    )
+
+    # Section identification
+    title = models.CharField(
+        max_length=200,
+        help_text="Descriptive title for this section (e.g., 'Main Genealogy', 'Index')"
+    )
+    section_type = models.CharField(
+        max_length=30,
+        choices=SECTION_TYPES,
+        help_text="Type of content and processing to apply"
+    )
+
+    # Page range
+    start_page = models.PositiveIntegerField(
+        help_text="First page number of this section (inclusive)"
+    )
+    end_page = models.PositiveIntegerField(
+        help_text="Last page number of this section (inclusive)"
+    )
+
+    # Optional notes
+    notes = models.TextField(
+        blank=True,
+        help_text="Optional notes about this section (content description, OCR issues, etc.)"
+    )
+
+    # Ordering
+    sequence = models.PositiveIntegerField(
+        default=0,
+        help_text="Display order (auto-set based on start_page if not specified)"
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "genealogy_booksection"
+        ordering = ["document", "sequence", "start_page"]
+        unique_together = [["document", "start_page"]]  # No overlapping sections
+        indexes = [
+            models.Index(fields=["document", "start_page", "end_page"]),
+        ]
+
+    def __str__(self):
+        return f"{self.document.title}: {self.title} (pp. {self.start_page}-{self.end_page})"
+
+    def save(self, *args, **kwargs):
+        # Auto-set sequence based on start_page if not explicitly set
+        if self.sequence == 0:
+            self.sequence = self.start_page
+        super().save(*args, **kwargs)
+
+    def clean(self):
+        """Validate that start_page <= end_page and no overlap with other sections"""
+        from django.core.exceptions import ValidationError
+
+        if self.start_page > self.end_page:
+            raise ValidationError("start_page must be <= end_page")
+
+        # Check for overlapping sections in the same document
+        overlapping = BookSection.objects.filter(
+            document=self.document
+        ).exclude(id=self.id).filter(
+            models.Q(start_page__lte=self.end_page, end_page__gte=self.start_page)
+        )
+
+        if overlapping.exists():
+            overlapping_section = overlapping.first()
+            raise ValidationError(
+                f"This section overlaps with '{overlapping_section.title}' "
+                f"(pp. {overlapping_section.start_page}-{overlapping_section.end_page})"
+            )
+
+    @classmethod
+    def get_section_for_page(cls, document, page_number):
+        """
+        Get the BookSection that contains the given page number.
+
+        Args:
+            document: Document instance
+            page_number: Page number to look up
+
+        Returns:
+            BookSection instance or None if no section defined for this page
+        """
+        return cls.objects.filter(
+            document=document,
+            start_page__lte=page_number,
+            end_page__gte=page_number
+        ).first()
+
+
 class DocumentPage(models.Model):
     """Individual page/image within a document"""
 

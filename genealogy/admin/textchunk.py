@@ -34,7 +34,7 @@ class TextChunkAdmin(admin.ModelAdmin):
     readonly_fields = [
         "id", "created_at", "updated_at", "document", "chunk_type", "sequence_number",
         "start_page", "end_page", "entities_extracted", "generation_number",
-        "generation_header", "family_groups", "text_content", "extraction_method",
+        "generation_header", "family_groups", "related_entry_display", "text_content", "extraction_method",
         "formatted_people", "formatted_relationships", "formatted_events",
         "created_persons_display", "created_events_display", "created_relationships_display"
     ]
@@ -65,6 +65,7 @@ class TextChunkAdmin(admin.ModelAdmin):
                     "generation_number",
                     "generation_header",
                     "family_groups",
+                    "related_entry_display",
                 ),
                 "description": "Genealogical context for this chunk.",
             },
@@ -169,6 +170,35 @@ class TextChunkAdmin(admin.ModelAdmin):
         return format_html("<br>".join(html_parts))
 
     formatted_events.short_description = "Extracted Events"  # type: ignore
+
+    def related_entry_display(self, obj: TextChunk) -> str:
+        """Display link to related genealogy entry (for source citations)"""
+        if not obj.related_genealogy_entry:
+            if obj.chunk_type == "CITATION":
+                return format_html('<em style="color: #999;">No related entry linked</em>')
+            return "—"
+
+        entry = obj.related_genealogy_entry
+        entry_url = reverse('admin:genealogy_textchunk_change', args=[entry.id])
+
+        # Show preview of the related entry
+        content_preview = entry.text_content[:100].replace('\n', ' ')
+        if len(entry.text_content) > 100:
+            content_preview += "..."
+
+        return format_html(
+            '<div style="padding: 10px; border: 1px solid #0066cc; border-radius: 4px; background: #e3f2fd;">'
+            '<div><strong>Chunk #{}</strong> ({})</div>'
+            '<div style="margin-top: 5px; color: #666; font-size: 0.9em;">{}</div>'
+            '<div style="margin-top: 5px;"><a href="{}" target="_blank">View entry →</a></div>'
+            '</div>',
+            entry.sequence_number,
+            entry.chunk_type,
+            content_preview,
+            entry_url
+        )
+
+    related_entry_display.short_description = "Related Entry (for citations)"  # type: ignore
 
     def created_persons_display(self, obj: TextChunk) -> str:
         """Display links to Person records created from this chunk"""
