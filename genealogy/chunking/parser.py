@@ -39,7 +39,8 @@ REMARRIAGE_FAMILY_GROUP_PATTERN = re.compile(
 
 # Match individual entries like "a. Name" or "l. Name"
 # Also match "I." (uppercase I) which is a common OCR error for "l." (lowercase L)
-INDIVIDUAL_ENTRY_PATTERN = re.compile(r'^([a-zI])\.\s+([A-Z])', re.MULTILINE)
+# Allow optional parenthetical notes like "a. (hypothetisch) Name" or "a. (Misschien) Name"
+INDIVIDUAL_ENTRY_PATTERN = re.compile(r'^([a-zI])\.\s+(?:\([^)]+\)\s+)?([A-Z])', re.MULTILINE)
 
 # Source citation keywords
 SOURCE_KEYWORDS = ['RGV', 'SSANO', 'DTB', 'BS', 'Bevolkingsregister', 'Weesregister',
@@ -119,6 +120,11 @@ def detect_chunk_type(token: GroundingToken) -> ChunkType:
         # Strip markdown hashes for pattern matching (DeepSeek-OCR includes them)
         content_stripped = content.lstrip('#').strip()
 
+        # Check if it's an individual entry (DeepSeek-OCR sometimes labels these as sub_title)
+        # Individual entries like "a. Name" or "b. (hypothetisch) Name"
+        if INDIVIDUAL_ENTRY_PATTERN.match(content_stripped):
+            return ChunkType.INDIVIDUAL_ENTRY
+
         # Check if it's a generation header
         if GENERATION_PATTERN.search(content_stripped):
             return ChunkType.GENERATION_HEADER
@@ -190,12 +196,32 @@ def is_biographical_text(content: str) -> bool:
         True if content appears to be biographical facts
     """
     # Contains genealogical markers
-    markers = ['*', '†', 'x 1.', 'x 2.', 'zv', 'dv', 'wed', 'weduwe']
-    if any(marker in content for marker in markers):
+    # Use word boundaries to avoid false positives like "advies" containing "dv"
+
+    # Birth/death symbols - but only if followed by typical genealogical context
+    # Avoid matching (* YYYY) in narrative like "Pieter van Zanten (* 1944) helped..."
+    # Look for *, ~ or † followed by space and location/date patterns
+    if re.search(r'[*~†]\s+\d{1,2}[\./-]', content):  # * 10.1.1850 or † 12-1-1920
+        return True
+    if re.search(r'[*~†]\s+[A-Z][a-z]+', content):  # * Amsterdam or † Naarden
         return True
 
-    # Addresses and dates pattern
-    if re.search(r'\d{4}:', content) or re.search(r'[A-Z][a-z]+\s+\d{1,3},', content):
+    # Marriage markers: x 1., x 2.
+    if re.search(r'\bx\s+\d+\.', content):
+        return True
+
+    # Genealogical abbreviations (son/daughter of, widow)
+    if re.search(r'\b(zv|dv|wed|weduwe)\b', content, re.IGNORECASE):
+        return True
+
+    # Residence pattern: year followed by colon and place name
+    # Must be at start of content or after whitespace, and followed by capital letter (place name)
+    # Example: "1850: Naarden" not "In 2007: 5461"
+    if re.search(r'(^|\s)\d{4}:\s+[A-Z][a-z]+', content):
+        return True
+
+    # Address pattern with street number: "Amsterdam 123,"
+    if re.search(r'[A-Z][a-z]+\s+\d{1,3},', content):
         return True
 
     return False

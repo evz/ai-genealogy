@@ -7,106 +7,17 @@ from celery import shared_task
 
 from ..models import Document, TextChunk
 from ..ollama_utils import OllamaClient, get_default_models
-from ..prompts import build_extraction_prompt, parse_extraction_output
 
 logger = logging.getLogger(__name__)
-
-
-def extract_entities_from_chunk(chunk, ollama, model):
-    """
-    Extract entities from a single chunk using LLM
-
-    Args:
-        chunk: TextChunk instance
-        ollama: OllamaClient instance
-        model: Model name to use for extraction
-
-    Returns:
-        dict: {
-            'success': bool,
-            'people_count': int,
-            'relationships_count': int,
-            'events_count': int,
-            'error': str (if failed)
-        }
-    """
-    try:
-        logger.info(f"Extracting from chunk {chunk.sequence_number}")
-
-        # Build extraction prompt
-        prompt = build_extraction_prompt(chunk)
-
-        # Calculate required context window based on chunk size
-        # Estimate: chunk tokens + prompt overhead (~2000 tokens) + output buffer (~2000 tokens)
-        estimated_tokens = len(chunk.text_content) // 4 + 4000
-
-        # Round up to nearest power of 2 for efficiency
-        # Min 4096 (efficient for small chunks), max 131072 (128K, model limit)
-        num_ctx = max(4096, min(131072, 2 ** (estimated_tokens - 1).bit_length()))
-
-        if num_ctx > 8192:
-            logger.info(f"Large chunk: using context window {num_ctx} tokens (chunk: ~{len(chunk.text_content)//4} tokens)")
-
-        # Query LLM
-        response = ollama.generate(
-            model=model,
-            prompt=prompt,
-            options={
-                'num_ctx': num_ctx,
-                'temperature': 0.0,
-            }
-        )
-
-        if not response:
-            logger.error(f"No response from LLM for chunk {chunk.sequence_number}")
-            return {
-                'success': False,
-                'error': 'No response from LLM'
-            }
-
-        # Parse output
-        extracted_data = parse_extraction_output(response)
-
-        # Save to chunk fields
-        chunk.extracted_people = extracted_data['people']
-        chunk.extracted_relationships = extracted_data['parent_child'] + extracted_data['partnerships']
-        chunk.extracted_events = extracted_data['events']
-        chunk.entities_extracted = True
-        chunk.save(update_fields=[
-            'extracted_people',
-            'extracted_relationships',
-            'extracted_events',
-            'entities_extracted'
-        ])
-
-        result = {
-            'success': True,
-            'people_count': len(extracted_data['people']),
-            'relationships_count': len(extracted_data['parent_child']) + len(extracted_data['partnerships']),
-            'events_count': len(extracted_data['events'])
-        }
-
-        logger.info(
-            f"Chunk {chunk.sequence_number}: "
-            f"{result['people_count']} people, "
-            f"{result['relationships_count']} rels, "
-            f"{result['events_count']} events"
-        )
-
-        return result
-
-    except Exception as e:
-        logger.error(f"Failed to extract from chunk {chunk.sequence_number}: {e}", exc_info=True)
-        return {
-            'success': False,
-            'error': str(e)
-        }
 
 
 @shared_task(bind=True)
 def extract_entities_from_chunks(self, document_id: str):  # noqa: ARG001
     """
-    Phase 2: Extract genealogy entities from GENEALOGY_ENTRY chunks using LLM
+    Phase 2: Extract genealogy entities using section-specific strategies.
+
+    Uses the strategy pattern to apply different extraction approaches based on
+    BookSection types. Each section type maps to a specific extraction strategy.
 
     Args:
         document_id: UUID string of the Document to extract from
@@ -115,29 +26,25 @@ def extract_entities_from_chunks(self, document_id: str):  # noqa: ARG001
         dict: Extraction result summary
     """
     try:
+        from django.db.models import Q
+        from ..extraction_strategies import get_strategy
+
         # Get the document
         document = Document.objects.get(id=document_id)
         logger.info(f"Starting entity extraction for document {document}")
 
-        # Get unprocessed GENEALOGY_ENTRY chunks
-        unprocessed_chunks = document.text_chunks.filter(
-            entities_extracted=False,
-            chunk_type="GENEALOGY_ENTRY"
-        ).order_by("sequence_number")
+        # Get all book sections
+        sections = document.book_sections.all().order_by('start_page')
 
-        if not unprocessed_chunks.exists():
-            # Mark document as extraction completed
-            document.extraction_completed = True
-            document.save(update_fields=["extraction_completed"])
-
+        if not sections.exists():
+            logger.warning(f"No BookSections defined for document {document}")
             return {
-                "success": True,
-                "message": "No chunks to process - extraction completed",
+                "success": False,
+                "error": "No BookSections defined - please configure book sections first",
                 "document_id": str(document_id),
-                "chunks_processed": 0,
             }
 
-        # Initialize Ollama client
+        # Initialize Ollama client once for all sections
         ollama = OllamaClient(timeout=3600)
         if not ollama.is_available():
             raise RuntimeError("Ollama server not available")
@@ -146,15 +53,75 @@ def extract_entities_from_chunks(self, document_id: str):  # noqa: ARG001
         model = document.llm_model_used or get_default_models()["llm_model"]
         logger.info(f"Using model: {model}")
 
-        chunks_processed = 0
-        chunks_failed = 0
+        total_chunks_processed = 0
+        total_chunks_failed = 0
+        sections_processed = {}
 
-        for chunk in unprocessed_chunks:
-            result = extract_entities_from_chunk(chunk, ollama, model)
-            if result['success']:
-                chunks_processed += 1
-            else:
-                chunks_failed += 1
+        # Process each section with its appropriate strategy
+        for section in sections:
+            logger.info(f"Processing section: {section.title} ({section.section_type}, pages {section.start_page}-{section.end_page})")
+
+            # Get the extraction strategy for this section type
+            try:
+                strategy = get_strategy(section.section_type)
+            except KeyError as e:
+                logger.error(f"Unknown section type: {section.section_type}")
+                continue
+
+            logger.info(f"Using strategy: {strategy.strategy_name}")
+
+            # Get unprocessed chunks for this section
+            # Filter by page range and strategy-specific chunk filter
+            chunk_filter = Q(
+                start_page__gte=section.start_page,
+                start_page__lte=section.end_page,
+                entities_extracted=False,
+                **strategy.get_chunk_filter()
+            )
+
+            unprocessed_chunks = document.text_chunks.filter(chunk_filter).order_by("sequence_number")
+            chunk_count = unprocessed_chunks.count()
+
+            logger.info(f"Found {chunk_count} chunks to process in this section")
+
+            if chunk_count == 0:
+                sections_processed[section.title] = {
+                    'strategy': strategy.strategy_name,
+                    'processed': 0,
+                    'failed': 0,
+                }
+                continue
+
+            # Process each chunk with the strategy
+            section_processed = 0
+            section_failed = 0
+
+            for chunk in unprocessed_chunks:
+                # Check if strategy wants to process this chunk
+                if not strategy.should_process(chunk):
+                    continue
+
+                # Extract using the strategy
+                result = strategy.extract(chunk, ollama, model)
+
+                if result['success']:
+                    section_processed += 1
+                    total_chunks_processed += 1
+                else:
+                    section_failed += 1
+                    total_chunks_failed += 1
+                    logger.error(f"Failed to extract from chunk {chunk.sequence_number}: {result.get('error')}")
+
+            sections_processed[section.title] = {
+                'strategy': strategy.strategy_name,
+                'processed': section_processed,
+                'failed': section_failed,
+            }
+
+            logger.info(
+                f"Section '{section.title}' complete: "
+                f"{section_processed} processed, {section_failed} failed"
+            )
 
         # Mark document as extraction completed
         document.extraction_completed = True
@@ -163,15 +130,16 @@ def extract_entities_from_chunks(self, document_id: str):  # noqa: ARG001
 
         logger.info(
             f"Extraction complete for document {document}: "
-            f"{chunks_processed} processed, {chunks_failed} failed"
+            f"{total_chunks_processed} processed, {total_chunks_failed} failed across {len(sections_processed)} sections"
         )
 
         return {
             "success": True,
-            "message": f"Processed {chunks_processed} chunks ({chunks_failed} failed)",
+            "message": f"Processed {total_chunks_processed} chunks ({total_chunks_failed} failed)",
             "document_id": str(document_id),
-            "chunks_processed": chunks_processed,
-            "chunks_failed": chunks_failed,
+            "chunks_processed": total_chunks_processed,
+            "chunks_failed": total_chunks_failed,
+            "sections_processed": sections_processed,
         }
 
     except ValidationError:

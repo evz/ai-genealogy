@@ -6,7 +6,7 @@ from django.utils.html import format_html
 
 from ..models import TextChunk, PersonMention, Event, RelationshipMention
 from ..ollama_utils import OllamaClient, get_default_models
-from ..tasks import extract_entities_from_chunk
+from ..extraction_strategies import get_strategy
 
 logger = logging.getLogger(__name__)
 
@@ -390,7 +390,35 @@ class TextChunkAdmin(admin.ModelAdmin):
         failed_count = 0
 
         for chunk in chunks:
-            result = extract_entities_from_chunk(chunk, ollama, model)
+            # Get the appropriate strategy based on the chunk's section
+            # Find which BookSection this chunk belongs to
+            section = chunk.document.book_sections.filter(
+                start_page__lte=chunk.start_page,
+                end_page__gte=chunk.start_page
+            ).first()
+
+            if not section:
+                self.message_user(
+                    request,
+                    f"Chunk {chunk.sequence_number} has no BookSection defined for page {chunk.start_page}",
+                    level=messages.WARNING
+                )
+                failed_count += 1
+                continue
+
+            try:
+                strategy = get_strategy(section.section_type)
+            except KeyError:
+                self.message_user(
+                    request,
+                    f"Unknown section type: {section.section_type}",
+                    level=messages.ERROR
+                )
+                failed_count += 1
+                continue
+
+            # Extract using the strategy
+            result = strategy.extract(chunk, ollama, model)
             if result['success']:
                 success_count += 1
             else:

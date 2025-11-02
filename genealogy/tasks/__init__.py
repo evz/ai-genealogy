@@ -10,7 +10,7 @@ Tasks are organized by functionality:
 
 # Import all tasks for backward compatibility
 from .chunking import create_document_chunks
-from .extraction import extract_entities_from_chunks, extract_entities_from_chunk
+from .extraction import extract_entities_from_chunks
 from .ocr import process_document_ocr, process_page_ocr
 
 __all__ = [
@@ -21,6 +21,4 @@ __all__ = [
     "create_document_chunks",
     # Extraction tasks
     "extract_entities_from_chunks",
-    # Utility functions
-    "extract_entities_from_chunk",
 ]

@@ -1,7 +1,8 @@
 """Text chunking tasks for genealogy documents
 
-This module handles chunking of OCR text into hierarchical genealogical chunks.
-It processes the entire book at once to maintain context across pages.
+This module handles chunking of OCR text using section-specific strategies.
+Different book sections (DESCENDANT_GENEALOGY, KWARTIERSTATEN, etc.) use
+different chunking approaches.
 """
 import logging
 
@@ -10,7 +11,8 @@ from django.core.exceptions import ValidationError
 from celery import shared_task
 
 from ..models import Document
-from ..chunking import GenealogicalTextChunker, save_chunks_to_db
+from ..chunking.persistence import save_chunks_to_db
+from ..chunking_strategies import get_chunking_strategy
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +20,11 @@ logger = logging.getLogger(__name__)
 @shared_task(bind=True)
 def create_document_chunks(self, document_id: str):  # noqa: ARG001
     """
-    Create text chunks with genealogical anchors for an entire document.
+    Create text chunks for a document using section-specific strategies.
 
-    Processes the ENTIRE BOOK at once by concatenating all pages, which allows:
-    - Maintaining genealogical context (generation, family group) across pages
-    - Detecting info boxes that span multiple pages
-    - Proper text flow restoration (main narrative vs info boxes)
-
-    Uses GenealogicalTextChunker with DeepSeek-OCR grounding tokens.
+    Processes each BookSection separately using its appropriate chunking strategy:
+    - DESCENDANT_GENEALOGY: Complex genealogical chunking with context tracking
+    - Other sections: Skipped for now (can add strategies later)
 
     Args:
         document_id: UUID string of the Document to chunk
@@ -48,76 +47,127 @@ def create_document_chunks(self, document_id: str):  # noqa: ARG001
         # Clear existing chunks for this document
         document.text_chunks.all().delete()
 
-        # Get all OCR-completed pages in order
-        pages = document.pages.filter(ocr_completed=True).order_by('page_number')
+        # Get all book sections
+        sections = document.book_sections.all().order_by('start_page')
 
-        if not pages.exists():
+        if not sections.exists():
+            logger.warning(f"No BookSections defined for document {document}")
             return {
                 "success": False,
-                "error": "No OCR-completed pages found",
+                "error": "No BookSections defined - please configure book sections first",
                 "document_id": str(document_id),
             }
 
-        # Concatenate all pages into one book-level OCR text
-        logger.info(f"Concatenating {pages.count()} pages into single book text")
+        total_chunks_created = 0
+        total_pages_processed = 0
+        sections_processed = {}
+        all_saved_chunks = []
 
-        book_text_parts = []
-        page_map = []  # Track which character ranges belong to which pages
+        # Process each section with its appropriate strategy
+        for section in sections:
+            logger.info(f"Processing section: {section.title} ({section.section_type}, pages {section.start_page}-{section.end_page})")
 
-        for page in pages:
-            if not page.ocr_text or not page.ocr_text.strip():
-                logger.warning(f"Skipping page {page.page_number} - no OCR text")
+            # Get the chunking strategy for this section type
+            try:
+                strategy = get_chunking_strategy(section.section_type)
+            except KeyError as e:
+                logger.error(f"Unknown section type: {section.section_type}")
+                sections_processed[section.title] = {
+                    'strategy': 'unknown',
+                    'chunks': 0,
+                    'status': 'error',
+                    'error': str(e)
+                }
                 continue
 
-            # Track the character position where this page starts
-            start_char = sum(len(part) + 2 for part in book_text_parts)  # +2 for "\n\n"
-            page_text = page.ocr_text
-            end_char = start_char + len(page_text)
+            logger.info(f"Using strategy: {strategy.strategy_name}")
 
-            page_map.append({
-                'page_number': page.page_number,
-                'page_obj': page,
-                'start_char': start_char,
-                'end_char': end_char,
-            })
+            # Check if strategy wants to process this section
+            if not strategy.should_process(section):
+                logger.info(f"Strategy declined to process section")
+                sections_processed[section.title] = {
+                    'strategy': strategy.strategy_name,
+                    'chunks': 0,
+                    'status': 'skipped'
+                }
+                continue
 
-            book_text_parts.append(page_text)
+            # Get pages for this section
+            section_pages = document.pages.filter(
+                page_number__gte=section.start_page,
+                page_number__lte=section.end_page,
+                ocr_completed=True
+            ).order_by('page_number')
 
-        # Join all pages with double newline separator
-        book_text = "\n\n".join(book_text_parts)
-        logger.info(f"Created book text: {len(book_text)} characters across {len(page_map)} pages")
+            if not section_pages.exists():
+                logger.warning(f"No OCR-completed pages found for section {section.title}")
+                sections_processed[section.title] = {
+                    'strategy': strategy.strategy_name,
+                    'chunks': 0,
+                    'status': 'no_pages'
+                }
+                continue
 
-        # Create chunker for whole book
-        # Pass document so chunker can look up BookSections
-        chunker = GenealogicalTextChunker(document=document)
+            # Concatenate pages for this section
+            section_text_parts = []
+            section_page_map = []
 
-        # Parse entire book into chunks
-        # This maintains genealogical context across pages and handles:
-        # - Generation headers that affect multiple pages
-        # - Family groups that span pages
-        # - Info boxes that start on one page and continue on the next
-        logger.info("Chunking entire book text...")
-        book_chunks = chunker.chunk(book_text)
-        logger.info(f"Created {len(book_chunks)} chunks from book text")
+            for page in section_pages:
+                if not page.ocr_text or not page.ocr_text.strip():
+                    logger.warning(f"Skipping page {page.page_number} - no OCR text")
+                    continue
 
-        # Save chunks to database with page mapping
-        # page_map and book_text are used to determine page numbers from grounding tokens
-        saved_chunks = save_chunks_to_db(
-            book_chunks,
-            document,
-            page_map,
-            book_text
-        )
-        chunks_created = len(saved_chunks)
+                start_char = sum(len(part) + 2 for part in section_text_parts)
+                page_text = page.ocr_text
+                end_char = start_char + len(page_text)
 
-        logger.info(f"Saved {chunks_created} chunks for document {document}")
+                section_page_map.append({
+                    'page_number': page.page_number,
+                    'page_obj': page,
+                    'start_char': start_char,
+                    'end_char': end_char,
+                })
+
+                section_text_parts.append(page_text)
+
+            section_text = "\n\n".join(section_text_parts)
+            logger.info(f"Section text: {len(section_text)} characters across {len(section_page_map)} pages")
+
+            # Chunk using the strategy
+            section_chunks = strategy.chunk_section(section_text, document, section_page_map)
+
+            # Save chunks to database
+            saved_chunks = save_chunks_to_db(
+                section_chunks,
+                document,
+                section_page_map,
+                section_text,
+                start_sequence=total_chunks_created + 1
+            )
+
+            chunks_created = len(saved_chunks)
+            total_chunks_created += chunks_created
+            total_pages_processed += len(section_page_map)
+            all_saved_chunks.extend(saved_chunks)
+
+            sections_processed[section.title] = {
+                'strategy': strategy.strategy_name,
+                'chunks': chunks_created,
+                'pages': len(section_page_map),
+                'status': 'success'
+            }
+
+            logger.info(f"Section '{section.title}' complete: {chunks_created} chunks created")
+
+        logger.info(f"Chunking complete: {total_chunks_created} chunks across {len(sections_processed)} sections")
 
         return {
             "success": True,
-            "message": f"Created {chunks_created} text chunks from entire book",
+            "message": f"Created {total_chunks_created} text chunks from {len(sections_processed)} sections",
             "document_id": str(document_id),
-            "chunks_created": chunks_created,
-            "pages_processed": len(page_map),
+            "chunks_created": total_chunks_created,
+            "pages_processed": total_pages_processed,
+            "sections_processed": sections_processed,
         }
 
     except ValidationError:

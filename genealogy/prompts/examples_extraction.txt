@@ -32,6 +32,7 @@ PARTNERSHIPS:
 
 EVENTS:
 - Wouter van Zanten|BAPT|1770-12-09|Gameren
+- Wouter van Zanten|OCCU||arbeider
 - Wouter van Zanten|MARR|1799-11-24|
 - Wouter van Zanten|DEAT|1826-08-27|Culemborg
 - Everdina Beijer|DEAT|1832-01-12|Culemborg
@@ -251,25 +252,28 @@ EVENTS:
 - Bessel van Zanten|EDUC|1847-1852|Naarden
 - Bessel van Zanten|RESI|< 1859-08-17|orphanage
 - Bessel van Zanten|RESI|> 1860-02-29|Diemen
-- Bessel van Zanten|OCCU|1866-1867|Military Service
-- Bessel van Zanten|OCCU|> 1867|Fortress supervisor
+- Bessel van Zanten|OCCU|1860|boerenknecht
+- Bessel van Zanten|OCCU||opzichter der fortificatiën
+- Bessel van Zanten|OCCU|1872|werkman
+- Bessel van Zanten|OCCU|1895|spoorwegarbeider
+- Bessel van Zanten|OCCU|1900|spoorwegbeambte
 - Bessel van Zanten|RESI|> 1867|Bussum
+- Geertruij Voorhaar|OCCU||dienstbode
+- Geertruij Voorhaar|OCCU|1879-1884|spoorwegwachteres
 - Geertruij Voorhaar|RESI|> 1869-05-31|Bussum
 - Geertruij Voorhaar|OTHER|> 1869-05-31|Lives with brother
 - Geertruij Voorhaar|OTHER|1869|Rents a room to Bessel van Zanten in Bussum
 - Bessel van Zanten|MARR|1872-05-10|Weesp
 - Geertruij Voorhaar|MARR|1872-05-10|Weesp
 - Bessel van Zanten|OTHER|1879|Received bronze army medal
-- Geertruij Voorhaar|OCCU|1879-1884|Crossing guard
 - Geertruij Voorhaar|OTHER|1884-02-18|Dismissed from her job for bad behavior
-- Bessel van Zanten|OCCU|1889|Railway crossing keeper
 - Geertruij Voorhaar|RESI|1892|Lepenlaan 9, Bussum
 - Geertruij Voorhaar|OTHER|1892|Resides with son Boudewijn van den Bergh
 - Geertruij Voorhaar|DEAT|1899-08-27|Lepenlaan 5, Bussum
 - Bessel van Zanten|MARR|1900-05-31|Bussum
 - Trijntje Anna Catharina Boer Rookhuijzen|MARR|1900-05-31|Bussum
 - Bessel van Zanten|OTHER|1903|Left railway service
-- Bessel van Zanten|OCCU|1903|Primary school instructor
+- Bessel van Zanten|OCCU|1903|meester op een Lagere School
 - Bessel van Zanten|RESI|1903|Haarlem
 - Bessel van Zanten|DEAT|1911-02-16|Haarlem
 - Herman Daniel van Zanten|BIRT|1842-11-28|Naarden

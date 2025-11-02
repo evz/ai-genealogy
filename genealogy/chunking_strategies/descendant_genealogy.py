@@ -1,54 +1,58 @@
-"""Genealogical text chunker with hierarchical context
-
-This module chunks OCR text from genealogical documents into semantic units
-with inherited genealogical context (generation, family group, parents).
-"""
-
+"""Chunking strategy for descendant genealogy sections"""
 import logging
-from typing import List, Tuple
+from typing import List
 
-from .handlers import CHUNK_HANDLERS
-from .models import ChunkType, GroundingToken, TextChunk
-from .parser import detect_chunk_type, detect_info_box_boundary, parse_grounding_tokens
+from .base import ChunkingStrategy
+from ..chunking.models import ChunkType, TextChunk
+from ..chunking.parser import parse_grounding_tokens
+from ..chunking.handlers import CHUNK_HANDLERS
 
 logger = logging.getLogger(__name__)
 
 
-class GenealogicalTextChunker:
+class DescendantGenealogyChunkingStrategy(ChunkingStrategy):
     """
-    Chunks genealogical text with hierarchical context tracking.
+    Chunking strategy for descendant genealogy sections.
 
-    Uses DeepSeek-OCR grounding tokens to preserve spatial structure and
-    maintain genealogical context (generation → family group → individual).
+    Handles:
+    - Generation headers
+    - Family group headers
+    - Individual entries with biographical context
+    - Source citations
+    - Info boxes
     """
 
-    def __init__(self, document=None):
-        """
-        Initialize the chunker.
+    def __init__(self):
+        # Genealogical context tracking
+        self.current_generation = None
+        self.current_family_group = None
+        self.current_family_group_id = None
+        self.current_parents = None
 
-        Args:
-            document: Optional Document model instance for looking up BookSections
-        """
-        self.document = document
+    @property
+    def strategy_name(self) -> str:
+        return "Descendant Genealogy Chunking"
 
-        # Genealogical context tracking (updated as we parse)
-        self.current_generation = None  # e.g., "Tweede generatie"
-        self.current_family_group = None  # e.g., "II.2 Kinderen van X en Y"
-        self.current_family_group_id = None  # e.g., "II.2"
-        self.current_parents = None  # Tuple of (father, mother) names
-
-    def chunk(self, ocr_text: str) -> List[TextChunk]:
+    def chunk_section(self, section_text: str, document, page_map: List[dict]) -> List:
         """
-        Parse OCR text into hierarchical chunks with genealogical context.
+        Chunk descendant genealogy section.
 
         Uses a two-pass approach:
         1. Extract images and info boxes (simple, out-of-flow content)
         2. Chunk main flow (complex genealogical processing)
 
-        Returns chunks in reading order with inherited context.
+        Args:
+            section_text: OCR text from genealogy pages, concatenated
+            document: Document model instance
+            page_map: List of dicts mapping character positions to page numbers
+
+        Returns:
+            List of TextChunk objects
         """
+        logger.info(f"Chunking descendant genealogy section with {len(section_text)} characters")
+
         # Parse all grounding tokens
-        all_tokens = list(parse_grounding_tokens(ocr_text))
+        all_tokens = list(parse_grounding_tokens(section_text))
         logger.info(f"Parsed {len(all_tokens)} grounding tokens")
 
         # PASS 1: Extract images and info boxes from the flow
@@ -77,10 +81,9 @@ class GenealogicalTextChunker:
             ))
 
         # PASS 2: Chunk the main flow with genealogical context
-        main_flow_chunks = self._chunk_main_flow(main_flow_tokens)
+        main_flow_chunks = self._chunk_main_flow(main_flow_tokens, document)
 
         # Adjust supports_chunk_index for main flow chunks
-        # They were indexed relative to main_flow_chunks, but need to be relative to final chunks list
         offset = len(chunks)  # Number of chunks already added (images + info boxes)
         for chunk in main_flow_chunks:
             if chunk.supports_chunk_index is not None:
@@ -93,33 +96,21 @@ class GenealogicalTextChunker:
 
         return chunks
 
-    def _extract_out_of_flow_content(
-        self,
-        tokens: List[GroundingToken]
-    ) -> Tuple[List[GroundingToken], List[List[GroundingToken]], List[GroundingToken]]:
-        """
-        Extract images and info boxes from token stream.
+    def _extract_out_of_flow_content(self, tokens):
+        """Extract images and info boxes from token stream (same as GenealogicalTextChunker)"""
+        from collections import Counter
 
-        Also extracts text tokens that are part of image captions (continuation text
-        that follows image_caption tokens but isn't marked as such by OCR).
-
-        Returns:
-            (images, info_box_groups, main_flow_tokens)
-        """
         images = []
         inverted_text_tokens = []
         main_flow_tokens = []
 
-        # Estimate main flow x1 baseline from text tokens
-        # (used to detect caption text that's indented differently)
+        # Estimate main flow x1 baseline
         main_flow_x1_values = []
         for token in tokens:
             if token.element_type == 'text' and not token.is_inverted:
                 main_flow_x1_values.append(token.bbox.x1)
 
-        # Find the most common x1 value (mode) as the baseline
         if main_flow_x1_values:
-            from collections import Counter
             x1_counter = Counter(main_flow_x1_values)
             baseline_x1, _ = x1_counter.most_common(1)[0]
         else:
@@ -131,7 +122,6 @@ class GenealogicalTextChunker:
         # First pass: identify text tokens that are part of image captions
         for i, token in enumerate(tokens):
             if token.element_type == 'image_caption':
-                # Look ahead for text tokens that are spatially close and not main flow
                 j = i + 1
                 last_y2 = token.bbox.y2
                 while j < len(tokens):
@@ -139,34 +129,27 @@ class GenealogicalTextChunker:
                     if next_token.element_type != 'text':
                         break
 
-                    # Check if vertically contiguous (y1 is close to previous y2)
                     y_gap = abs(next_token.bbox.y1 - last_y2)
-                    if y_gap > 50:  # Not vertically contiguous
+                    if y_gap > 50:
                         break
 
-                    # Check if x1 differs from main flow baseline
-                    # (caption text is usually indented/centered differently)
                     if baseline_x1 is not None:
                         x1_diff = abs(next_token.bbox.x1 - baseline_x1)
-                        if x1_diff < 20:  # Too close to baseline - probably main flow
+                        if x1_diff < 20:
                             break
 
-                    # This token is part of the caption
                     skip_indices.add(j)
                     last_y2 = next_token.bbox.y2
                     j += 1
 
-        # Second pass: extract tokens based on type and skip list
+        # Second pass: extract tokens
         for i, token in enumerate(tokens):
             if i in skip_indices:
-                # This text token is part of an image caption
                 images.append(token)
             elif token.element_type in ['image', 'image_caption']:
                 images.append(token)
-            # Extract inverted text (info boxes)
             elif token.is_inverted and token.element_type in ['text', 'sub_title']:
                 inverted_text_tokens.append(token)
-            # Everything else goes to main flow
             else:
                 main_flow_tokens.append(token)
 
@@ -176,40 +159,32 @@ class GenealogicalTextChunker:
             current_group = [inverted_text_tokens[0]]
 
             for i in range(1, len(inverted_text_tokens)):
-                # Check if this token is consecutive with the previous one
                 prev_idx = tokens.index(inverted_text_tokens[i-1])
                 curr_idx = tokens.index(inverted_text_tokens[i])
 
                 if curr_idx == prev_idx + 1:
-                    # Consecutive - add to current group
                     current_group.append(inverted_text_tokens[i])
                 else:
-                    # Gap - start new group
                     info_box_groups.append(current_group)
                     current_group = [inverted_text_tokens[i]]
 
-            # Don't forget the last group
             info_box_groups.append(current_group)
 
         return images, info_box_groups, main_flow_tokens
 
-    def _chunk_main_flow(self, tokens: List[GroundingToken]) -> List[TextChunk]:
-        """
-        Chunk the main flow tokens with genealogical context.
+    def _chunk_main_flow(self, tokens, document):
+        """Chunk main flow tokens using handler pattern (same as GenealogicalTextChunker)"""
+        from ..chunking.parser import detect_chunk_type
 
-        Uses the handler pattern to process different chunk types.
-        This is much cleaner than the original 229-line method!
-        """
         chunks = []
         i = 0
 
-        # Context dictionary that handlers will update
         context = {
             'generation': self.current_generation,
             'family_group': self.current_family_group,
             'family_group_id': self.current_family_group_id,
             'parents': self.current_parents,
-            'document': self.document,  # For checking section boundaries
+            'document': document,
         }
 
         while i < len(tokens):
@@ -231,7 +206,6 @@ class GenealogicalTextChunker:
                     i = new_index
                     break
             else:
-                # Should never happen (DefaultChunkHandler always matches)
                 logger.warning(f"No handler found for chunk type {chunk_type} at index {i}")
                 i += 1
 

@@ -26,7 +26,6 @@ from ..ollama_utils import OllamaClient, get_default_models
 from ..tasks import (
     create_document_chunks,
     extract_entities_from_chunks,
-    extract_entities_from_chunk,
     process_page_ocr,
 )
 

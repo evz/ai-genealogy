@@ -52,56 +52,75 @@ def build_extraction_prompt(chunk, examples=None):
     if examples is None:
         examples = load_examples()
 
+    # Build genealogical context
+    generation_info = f"Generation {chunk.generation_number}" if chunk.generation_number else "None"
     family_group = chunk.family_groups[0] if chunk.family_groups else "None"
 
-    return f"""You are extracting genealogical information from Dutch genealogy text.
+    # Show Phase 1 extracted data (deterministic extraction from chunking)
+    phase1_people = chunk.extracted_people if chunk.extracted_people else []
+    phase1_relationships = chunk.extracted_relationships if chunk.extracted_relationships else []
+
+    # Format Phase 1 data for display
+    if phase1_people:
+        phase1_people_str = ", ".join(phase1_people)
+    else:
+        phase1_people_str = "None"
+
+    if phase1_relationships:
+        phase1_rels_str = f"{len(phase1_relationships)} parent-child relationships"
+    else:
+        phase1_rels_str = "None"
+
+    return f"""Extract genealogical information from Dutch genealogy text.
 
 {DUTCH_ABBREVIATIONS}
 
 {EVENT_TYPE_CODES}
 
-Here are examples of how to extract information:
+EXAMPLES:
 
 {examples}
 
 ======================================================================
-NOW EXTRACT FROM THIS TEXT
+YOUR TASK
 ======================================================================
+
+CONTEXT:
+- Generation: {generation_info}
+- Family Group: {family_group}
+
+ALREADY EXTRACTED (Phase 1):
+- People: {phase1_people_str}
+- Relationships: {phase1_rels_str}
 
 CONTENT TO EXTRACT FROM:
 {chunk.text_content}
 
-FAMILY GROUP CONTEXT (for inferring parent relationships only): {family_group}
+INSTRUCTIONS:
+1. Extract ONLY information explicitly stated in the content above
+2. Focus on:
+   - Life events: births, deaths, baptisms, burials, marriages
+   - Occupations: any profession, job, or occupation mentioned (use OCCU event type)
+   - Residences: places where people lived (use RESI event type)
+   - Partnerships: marriages and relationships
+   - Additional people mentioned
+3. If the content has NO genealogical facts (just narrative/acknowledgments), return "None" for all sections
+4. Do NOT copy the examples or Phase 1 data
+5. For occupations, extract the occupation as an OCCU event with the person's name
 
-Extract the information in the same format as the examples above:
+OUTPUT FORMAT:
 
 PEOPLE:
-- List all people mentioned (one per line)
+- List people mentioned (one per line, or "None")
 
 PARENT_CHILD:
-- PersonA|child|PersonB (PersonA is child of PersonB)
-- PersonA|parent|PersonB (PersonA is parent of PersonB)
+- PersonA|child|PersonB (or "None")
 
 PARTNERSHIPS:
-- PersonA|spouse|PersonB
+- PersonA|spouse|PersonB (or "None")
 
 EVENTS:
-- PersonName|EVENT_CODE|Date|Place
-- Use event codes: BIRT, DEAT, MARR, BAPT, BURI, RESI, OCCU, EDUC, IMMI, EMIG, OTHER
-- Date format: YYYY-MM-DD (or YYYY if only year known, or date ranges like "1847-1852")
-- Place can be empty if not mentioned
-
-CRITICAL RULES - READ CAREFULLY:
-- ONLY extract information that is EXPLICITLY STATED in the "CONTENT TO EXTRACT FROM" section above
-- DO NOT invent, assume, or hallucinate any information not present in the content
-- DO NOT extract information from the FAMILY GROUP CONTEXT - use it ONLY to infer parent names when you see "dv" or "zv" without explicit parent names
-- If the content is very short or incomplete, extract only what is explicitly there - DO NOT fill in missing information
-- Do NOT extract from speculative text (words like "Misschien", "mogelijk", "vermoedelijk")
-- Do NOT extract witnesses (Doopgetuige, getuige) as family members
-- When you see "dv ParentA en ParentB", create TWO separate child relationships
-- When you see "Kinderen van ParentA en ParentB", create child relationships to BOTH parents
-- If a section has no data, write "None"
-- If the content only mentions a name and birth symbol, only extract that person and birth event - nothing more
+- PersonName|EVENT_CODE|Date|Place (or "None")
 
 Extract now:
 """

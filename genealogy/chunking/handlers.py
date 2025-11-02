@@ -128,83 +128,21 @@ class FamilyGroupHeaderHandler(ChunkHandler):
         return chunk, index + 1
 
 
-class SourceCitationSectionHandler(ChunkHandler):
-    """Handles source citation sections (Bronverwijzing / Source indication)"""
-
-    def can_handle(self, chunk_type: ChunkType, token: GroundingToken) -> bool:
-        return chunk_type == ChunkType.SOURCE_CITATION and token.element_type == 'sub_title'
-
-    def create_chunk(
-        self,
-        chunk_type: ChunkType,
-        token: GroundingToken,
-        tokens: List[GroundingToken],
-        index: int,
-        context: dict,
-        chunks: List[TextChunk],
-    ) -> Tuple[TextChunk, int]:
-        from .parser import detect_chunk_type
-
-        # Collect all tokens in the citation section (until next structural boundary)
-        citation_section_tokens = [token]  # Include the header
-        j = index + 1
-        while j < len(tokens):
-            next_token = tokens[j]
-            next_type = detect_chunk_type(next_token)
-
-            # Stop at next structural element
-            if next_token.element_type == 'sub_title':
-                break
-
-            # Stop at individual entries (they're not part of the citation)
-            if next_type == ChunkType.INDIVIDUAL_ENTRY:
-                break
-
-            # Stop at family group or generation headers
-            if next_type in (ChunkType.FAMILY_GROUP_HEADER, ChunkType.GENERATION_HEADER):
-                break
-
-            # Stop at biographical text that looks like an individual entry
-            if next_type == ChunkType.BIOGRAPHICAL_TEXT:
-                if re.match(r'^[A-Z]\.', next_token.content):
-                    break
-
-            # Include all text content
-            if next_token.element_type == 'text':
-                citation_section_tokens.append(next_token)
-                j += 1
-            else:
-                break
-
-        # Create one chunk for the entire citation section
-        citation_content = '\n\n'.join(t.content for t in citation_section_tokens)
-
-        # Find the most recent individual entry to link to
-        supports_index = None
-        for k in range(len(chunks) - 1, -1, -1):
-            if chunks[k].chunk_type == ChunkType.INDIVIDUAL_ENTRY:
-                supports_index = k
-                break
-
-        chunk = TextChunk(
-            chunk_type=ChunkType.SOURCE_CITATION,
-            content=citation_content,
-            grounding_tokens=citation_section_tokens,
-            generation=context['generation'],
-            family_group=context['family_group'],
-            family_group_id=context['family_group_id'],
-            parents=None,  # Don't include parents for source citations
-            supports_chunk_index=supports_index,
-        )
-
-        return chunk, j
-
-
 class IndividualEntryHandler(ChunkHandler):
     """Handles individual entries like 'a. Name, *date, †date'"""
 
     def can_handle(self, chunk_type: ChunkType, token: GroundingToken) -> bool:
         return chunk_type == ChunkType.INDIVIDUAL_ENTRY
+
+    def _get_section_type_for_token(self, token: GroundingToken, document) -> str:
+        """Get the BookSection type for a token based on its y-coordinate and page structure"""
+        if not document:
+            return None
+
+        # Tokens are in reading order, and y-coordinates reset for each page
+        # We can estimate the page by looking at y-coordinate jumps
+        # But this is complex... For now, return None and we'll check differently
+        return None
 
     def create_chunk(
         self,
@@ -246,11 +184,9 @@ class IndividualEntryHandler(ChunkHandler):
             if next_type == ChunkType.SOURCE_CITATION and next_token.element_type == 'sub_title':
                 break
 
-            # Stop if we hit text from a significantly different column
-            if next_token.element_type == 'text':
-                x1_diff = abs(next_token.bbox.x1 - baseline_x1)
-                if x1_diff > 100:  # Different column (coordinates are in 1000 bins)
-                    break
+            # Note: We don't stop on column shifts because DeepSeek-OCR preserves reading order
+            # In two-column layouts, the narrative naturally flows from left to right column
+            # Trust the OCR's reading order instead of using spatial heuristics
 
             # Include biographical text, narrative context, info box headers (sub-sections),
             # and inline source citations (text-level only)
@@ -311,10 +247,40 @@ class StandaloneSourceCitationHandler(ChunkHandler):
         context: dict,
         chunks: List[TextChunk],
     ) -> Tuple[TextChunk, int]:
+        from .parser import detect_chunk_type
+
+        # Collect all following citation content until we hit a structural boundary
+        citation_tokens = [token]
+        j = index + 1
+
+        while j < len(tokens):
+            next_token = tokens[j]
+            next_type = detect_chunk_type(next_token)
+
+            # Stop at structural boundaries
+            if next_type in (ChunkType.GENERATION_HEADER, ChunkType.FAMILY_GROUP_HEADER,
+                            ChunkType.INDIVIDUAL_ENTRY):
+                break
+
+            # Stop at another source citation section header
+            if next_type == ChunkType.SOURCE_CITATION and next_token.element_type == 'sub_title':
+                break
+
+            # Include narrative, biographical text, inline citations, and info boxes
+            # (newspaper headers within citations are often labeled as INFO_BOX)
+            if next_type in (ChunkType.NARRATIVE_CONTEXT, ChunkType.BIOGRAPHICAL_TEXT,
+                           ChunkType.SOURCE_CITATION, ChunkType.INFO_BOX):
+                citation_tokens.append(next_token)
+                j += 1
+            else:
+                break
+
+        citation_content = '\n\n'.join(t.content for t in citation_tokens)
+
         chunk = TextChunk(
             chunk_type=ChunkType.SOURCE_CITATION,
-            content=token.content,
-            grounding_tokens=[token],
+            content=citation_content,
+            grounding_tokens=citation_tokens,
             generation=context['generation'],
             family_group=context['family_group'],
             family_group_id=context['family_group_id'],
@@ -322,7 +288,7 @@ class StandaloneSourceCitationHandler(ChunkHandler):
             supports_chunk_index=len(chunks) - 1 if chunks else None,
         )
 
-        return chunk, index + 1
+        return chunk, j
 
 
 class DefaultChunkHandler(ChunkHandler):
@@ -357,7 +323,6 @@ class DefaultChunkHandler(ChunkHandler):
 CHUNK_HANDLERS = [
     GenerationHeaderHandler(),
     FamilyGroupHeaderHandler(),
-    SourceCitationSectionHandler(),
     IndividualEntryHandler(),
     StandaloneSourceCitationHandler(),
     DefaultChunkHandler(),  # Must be last (fallback)
