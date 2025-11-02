@@ -12,59 +12,146 @@ The interesting problems are mostly around OCR (handling complex layouts with se
 
 ## Pipeline
 
-### 1. OCR with Layout Understanding
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 1. OCR WITH GROUNDING TOKENS (DeepSeek-OCR)                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│ • Rotation correction (Tesseract OSD + Kornia projection profiles)     │
+│ • Layout detection (DocLayout-YOLO finds regions, types)               │
+│ • DeepSeek-OCR with grounding tokens (bounding boxes + element types)  │
+│                                                                         │
+│ Output: OCRPage with grounded tokens (position + semantic type)        │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 2. BOOK SECTION IDENTIFICATION                                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│ • Detect section types (FRONT_MATTER, DESCENDANT_GENEALOGY,            │
+│   KWARTIERSTATEN, APPENDIX, GLOSSARY, INDEX)                           │
+│ • Store page ranges for each section                                   │
+│                                                                         │
+│ Output: BookSection records with start/end pages                       │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 3. TEXT CHUNKING (Section-Specific Strategies)                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│ For DESCENDANT_GENEALOGY sections:                                     │
+│   Pass 1: Extract out-of-flow content (images, info boxes)             │
+│   Pass 2: Handler-based chunking of main flow                          │
+│     - GenerationHeaderHandler    (I, II, III, ...)                     │
+│     - FamilyGroupHeaderHandler   (II.3. Kinderen van...)               │
+│     - IndividualEntryHandler     (a. Pieter van Zanten, ...)           │
+│     - SourceCitationHandler      (bibliographic references)            │
+│                                                                         │
+│   Phase 1 Extraction (Deterministic):                                  │
+│     • Parse generation numbers, family groups                          │
+│     • Extract people from headers (parents, children)                  │
+│     • Extract parent-child relationships from structure                │
+│                                                                         │
+│ For other sections: SkipChunkingStrategy (not implemented yet)         │
+│                                                                         │
+│ Output: TextChunk records with chunk_type, generation_number,          │
+│         family_groups, extracted_people, extracted_relationships       │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 4. LLM EXTRACTION (Section-Specific Strategies)                        │
+├─────────────────────────────────────────────────────────────────────────┤
+│ For DESCENDANT_GENEALOGY chunks (chunk_type='GENEALOGY_ENTRY'):        │
+│                                                                         │
+│   Phase 2 Extraction (LLM):                                            │
+│     • Merge with Phase 1 data (people, relationships)                  │
+│     • Extract events: BIRT, DEAT, MARR, BAPT, BURI, OCCU, RESI, etc.   │
+│     • Extract partnerships (spouse relationships)                      │
+│     • Enrich with additional people from narrative text                │
+│     • Dynamic context window (4K-128K) based on chunk size             │
+│                                                                         │
+│ For other sections: SkipExtractionStrategy (not implemented yet)       │
+│                                                                         │
+│ Output: Enhanced TextChunk with extracted_events, enriched people      │
+│         and relationships                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 5. ENTITY CREATION (create_entities.py)                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│ • Create PersonMention for each person (immutable record)              │
+│ • Create singleton Identity for each mention                           │
+│ • Create RelationshipMention (parent-child links)                      │
+│ • Create PartnershipMention (spouse relationships)                     │
+│ • Create Event records (BIRT, DEAT, MARR, OCCU, etc.)                  │
+│ • Link events to person mentions                                       │
+│                                                                         │
+│ Output: PersonMention, Identity, RelationshipMention,                  │
+│         PartnershipMention, Event, Place records                       │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 6. ENTITY CLUSTERING (cluster_entities.py)                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Graph-based entity resolution (Kirielle et al. 2022):                  │
+│                                                                         │
+│ Phase 1: Bootstrap high-confidence matches                             │
+│   • Calculate name similarity (Levenshtein)                            │
+│   • Calculate date proximity (birth year)                              │
+│   • Calculate relationship overlap (spouse/child Jaccard)              │
+│   • Validate constraints (age, gender, temporal)                       │
+│   • Merge clusters with similarity >= 0.75                             │
+│                                                                         │
+│ Phase 2: Iterative refinement                                          │
+│   • Re-calculate similarities with merge-aware matching                │
+│   • Merge clusters with similarity >= 0.60                             │
+│   • Infer partnerships from shared children                            │
+│   • Refine with transitive relationship matching                       │
+│                                                                         │
+│ Output: PotentialDuplicate records for review                          │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 7. MANUAL REVIEW & MERGE                                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│ • Review PotentialDuplicate suggestions in admin UI                    │
+│ • Merge PersonMentions into consolidated Identities                    │
+│ • Audit log tracks all merge operations (reversible)                   │
+│                                                                         │
+│ Output: Merged Identity records representing unique individuals        │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-The OCR pipeline does semantic document layout analysis before text extraction:
+### Key Design Decisions
 
-- **Rotation correction** - Coarse detection with Tesseract OSD, then GPU-accelerated projection profiles (Kornia) for fine adjustment (0.1° precision)
-- **Layout detection** - DocLayout-YOLO finds text blocks, titles, tables, figures, captions
-- **Region-based OCR** - Tesseract processes each region independently, separates main text from marginal annotations based on position
+**Two-Phase Extraction:** Phase 1 (deterministic, during chunking) provides reliable anchor data that Phase 2 (LLM) enhances. This reduces hallucination and improves quality.
 
-This approach came after trying morphological segmentation and variance-based methods. Layout-aware processing handles Dutch family book formats much better than naive line-by-line OCR. Details in [docs/doclayout_yolo_pipeline.md](docs/doclayout_yolo_pipeline.md).
+**Section-Based Processing:** Different book sections (descendant genealogy, ancestor charts, indexes) need different chunking and extraction logic. Strategy pattern allows clean separation.
 
-### 2. Entity Extraction
+**Grounding Tokens:** DeepSeek-OCR provides bounding boxes and semantic types (title, text, list, etc.) that enable intelligent chunking based on document structure, not just text patterns.
 
-Local LLM (via Ollama) extracts structured data from OCR text:
-
-- Generation-aware chunking preserves genealogical structure (family groups, generation headers)
-- Extracts person mentions, relationships (parent-child, partnerships), events (birth, death, marriage)
-- Dynamic context window (4K-128K tokens) based on chunk complexity
-
-All extractions stored as immutable `PersonMention` records with source provenance. Each mention gets mapped to an `Identity` (the "real person") through a mutable mapping layer.
-
-### 3. Graph-Based Duplicate Detection
-
-Clustering algorithm (based on Kirielle et al. 2022) finds duplicate person mentions using attribute + relational similarity:
-
-- **Attribute matching** - Levenshtein distance for names, decay functions for dates, inverse frequency weighting for rare values
-- **Relationship matching** - Jaccard similarity on spouse/parent/child overlap, with merge-aware transitive matching (if two mentions share a spouse that's already been identified as the same person, that's strong evidence they're also the same)
-- **Constraint validation** - Temporal (birth/death compatibility), biological (lifespan limits), sibling detection (shared parents but different names)
-- **Iterative refinement** - After merging some clusters, re-run clustering to find new matches that depend on previous merges
-
-Creates `PotentialDuplicate` records for manual review. Merge operations are fully reversible through an audit log.
-
-Details in [docs/pedigree_construction_notes.md](docs/pedigree_construction_notes.md) and [docs/family_clustering.md](docs/family_clustering.md).
+**Immutable Mentions:** All `PersonMention` records are immutable with full provenance. Deduplication happens through mutable `Identity` mappings that can be reviewed and reversed.
 
 ## Tech Stack
 
-- Django + PostgreSQL (pgvector for future embedding work) + Celery + Redis
-- Tesseract 5.x + DocLayout-YOLO
-- Ollama for local LLM inference
-- Kornia/PyTorch for GPU-accelerated image processing
+- **Backend**: Django + PostgreSQL (pgvector) + Celery + Redis
+- **OCR**: DeepSeek-OCR, DocLayout-YOLO, Tesseract OSD
+- **LLM**: Ollama (llama3.1:70b)
+- **Image Processing**: Kornia/PyTorch (GPU)
+- **Clustering**: Custom dependency graph + Union-Find
+- **String Matching**: textdistance (Levenshtein)
 
 ## Current Status
 
-The pipeline works end-to-end (OCR → extraction → clustering → manual merge review). Currently refining the entity resolution logic and building out the admin UI for merge operations.
+End-to-end pipeline working. Currently processing the Van Zanten family book.
 
 Recent work:
-- Implemented reversible provenance architecture (all extractions immutable, merges tracked in audit log)
-- Added merge-aware clustering (re-running clustering after merges picks up new matches based on previously merged identities)
-- Improved sibling detection and constraint validation
+- DeepSeek-OCR integration with grounding tokens
+- Section-based processing (strategy pattern for chunking + extraction)
+- Two-phase extraction (deterministic + LLM)
+- Occupation extraction (inline + narrative)
 
-Still todo:
-- Better LLM prompts for relationship extraction (currently misses some edge cases)
-- Evaluation metrics for clustering quality
-- UI polish for the merge review workflow
+Next:
+- Strategies for other section types (ancestor charts, indexes)
+- Clustering quality metrics
+- Merge review UI polish
 
 ## Docs
 
