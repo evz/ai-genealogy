@@ -31,3 +31,9 @@ bandit==1.8.6
 django-stubs==5.1.0
 types-redis==4.6.0.20241004
 pre-commit==4.0.1
+
+# Testing dependencies
+pytest==8.3.4
+pytest-django==4.9.0
+pytest-cov==6.0.0
+pytest-xdist==3.6.1

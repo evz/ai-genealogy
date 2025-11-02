@@ -25,8 +25,9 @@ GENERATION_PATTERN = re.compile(
 # Family group pattern - matches various formats including OCR corruptions
 # Standard: "II.1. Kinderen van X en Y" or "II.1. Children of X and Y"
 # With reference: "II.1. Kinderen van X en Y (VI.1.c):"
+# Also matches without period: "X.14 Children of..." (OCR variation)
 FAMILY_GROUP_PATTERN = re.compile(
-    r'([IVX]+\.\d+[a-z]?)\.\s+(?:Kinderen?|Kind|Children?|Child)\s+(?:van|of)\s+(.+?)(?:\s+(?:en|and)\s+(.+?))?(?:\s*\([^)]+\))?:?\s*$',
+    r'([IVX]+\.\d+[a-z]?)\.?\s+(?:Kinderen?|Kind|Children?|Child)\s+(?:van|of)\s+(.+?)(?:\s+(?:en|and)\s+(.+?))?(?:\s*\([^)]+\))?:?\s*$',
     re.IGNORECASE
 )
 

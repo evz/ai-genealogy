@@ -35,10 +35,6 @@ RUN wget -O /usr/share/tesseract-ocr/5/tessdata/eng.traineddata \
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m spacy download nl_core_news_sm
-RUN --mount=type=cache,target=/root/.cache/pip \
-    python -m spacy download en_core_web_sm
 
 # Copy project files
 COPY . .

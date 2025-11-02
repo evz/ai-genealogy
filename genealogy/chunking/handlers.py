@@ -71,7 +71,7 @@ class GenerationHeaderHandler(ChunkHandler):
             chunk_type=ChunkType.GENERATION_HEADER,
             content=token.content,
             grounding_tokens=[token],
-            generation=context['generation'],
+            generation=context.get('generation'),
         )
 
         return chunk, index + 1
@@ -119,10 +119,10 @@ class FamilyGroupHeaderHandler(ChunkHandler):
             chunk_type=ChunkType.FAMILY_GROUP_HEADER,
             content=token.content,
             grounding_tokens=[token],
-            generation=context['generation'],
-            family_group=context['family_group'],
-            family_group_id=context['family_group_id'],
-            parents=context['parents'],
+            generation=context.get('generation'),
+            family_group=context.get('family_group'),
+            family_group_id=context.get('family_group_id'),
+            parents=context.get('parents'),
         )
 
         return chunk, index + 1
@@ -205,10 +205,10 @@ class IndividualEntryHandler(ChunkHandler):
             chunk_type=ChunkType.INDIVIDUAL_ENTRY,
             content=entry_content,
             grounding_tokens=entry_tokens,
-            generation=context['generation'],
-            family_group=context['family_group'],
-            family_group_id=context['family_group_id'],
-            parents=context['parents'],
+            generation=context.get('generation'),
+            family_group=context.get('family_group'),
+            family_group_id=context.get('family_group_id'),
+            parents=context.get('parents'),
             individual_marker=individual_marker,
         )
 
@@ -281,10 +281,10 @@ class StandaloneSourceCitationHandler(ChunkHandler):
             chunk_type=ChunkType.SOURCE_CITATION,
             content=citation_content,
             grounding_tokens=citation_tokens,
-            generation=context['generation'],
-            family_group=context['family_group'],
-            family_group_id=context['family_group_id'],
-            parents=context['parents'],
+            generation=context.get('generation'),
+            family_group=context.get('family_group'),
+            family_group_id=context.get('family_group_id'),
+            parents=context.get('parents'),
             supports_chunk_index=len(chunks) - 1 if chunks else None,
         )
 
@@ -310,10 +310,10 @@ class DefaultChunkHandler(ChunkHandler):
             chunk_type=chunk_type,
             content=token.content,
             grounding_tokens=[token],
-            generation=context['generation'],
-            family_group=context['family_group'],
-            family_group_id=context['family_group_id'],
-            parents=context['parents'],
+            generation=context.get('generation'),
+            family_group=context.get('family_group'),
+            family_group_id=context.get('family_group_id'),
+            parents=context.get('parents'),
         )
 
         return chunk, index + 1

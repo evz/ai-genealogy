@@ -1,0 +1,24 @@
+<|ref|>sub_title<|/ref|><|det|>[[105, 77, 377, 96]]<|/det|>
+## TWAALFDE GENERATIE
+
+<|ref|>text<|/ref|><|det|>[[105, 102, 670, 120]]<|/det|>
+XII.1. Children of Kelly Kamp Cameron and Jesse Newton (XI.8.a):
+
+<|ref|>text<|/ref|><|det|>[[105, 125, 536, 164]]<|/det|>
+a. Isabella Marian Newton, * Chicago (IL) 7.1.2013,
+b. Lorelai Margaret Newton, * Chicago (IL) 20.6.2015.
+
+<|ref|>text<|/ref|><|det|>[[105, 169, 699, 187]]<|/det|>
+XII.2. Children of Ellery Ann Kamp and Travis Chase Woods (XI.10.c):
+
+<|ref|>text<|/ref|><|det|>[[105, 192, 460, 209]]<|/det|>
+a. Greyson Woods, * Dallas (TX) 3.11.2020.
+
+<|ref|>text<|/ref|><|det|>[[105, 214, 748, 232]]<|/det|>
+XII.3. Children of Emily Frances Terpstra and Adam Michael Utsch (X.12.a):
+
+<|ref|>text<|/ref|><|det|>[[105, 237, 620, 255]]<|/det|>
+a. Miley Grace [Miley] Utsch, * Buffalo (Wright, MN) 19.12.2007,
+
+<|ref|>text<|/ref|><|det|>[[105, 261, 630, 278]]<|/det|>
+b. Anna Elisabeth [Anna] Utsch, * Buffalo (Wright, MN) 10.5.2010.
