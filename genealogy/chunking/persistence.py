@@ -66,7 +66,7 @@ def save_chunks_to_db(
     Save TextChunk dataclass instances to the database.
 
     Args:
-        chunks: List of TextChunk dataclass instances from GenealogicalTextChunker
+        chunks: List of TextChunk dataclass instances from chunking strategies
         document: Document model instance
         page_map: List of dicts mapping character positions to pages
         book_text: Full book text (needed to map grounding tokens to character positions)

@@ -97,7 +97,7 @@ class DescendantGenealogyChunkingStrategy(ChunkingStrategy):
         return chunks
 
     def _extract_out_of_flow_content(self, tokens):
-        """Extract images and info boxes from token stream (same as GenealogicalTextChunker)"""
+        """Extract images and info boxes from token stream"""
         from collections import Counter
 
         images = []
@@ -173,7 +173,7 @@ class DescendantGenealogyChunkingStrategy(ChunkingStrategy):
         return images, info_box_groups, main_flow_tokens
 
     def _chunk_main_flow(self, tokens, document):
-        """Chunk main flow tokens using handler pattern (same as GenealogicalTextChunker)"""
+        """Chunk main flow tokens using handler pattern"""
         from ..chunking.parser import detect_chunk_type
 
         chunks = []

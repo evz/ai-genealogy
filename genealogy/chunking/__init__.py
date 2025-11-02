@@ -4,12 +4,14 @@ This package provides tools for chunking OCR text from genealogical documents
 into semantic units with hierarchical genealogical context.
 
 Main exports:
-- GenealogicalTextChunker: Main chunker class
 - save_chunks_to_db: Database persistence function
 - ChunkType, TextChunk, etc.: Data models
+- Parser functions for detecting chunk types and extracting entities
+
+Note: Chunking logic is implemented via the strategy pattern in
+genealogy.chunking_strategies (see DescendantGenealogyChunkingStrategy).
 """
 
-from .chunker import GenealogicalTextChunker
 from .models import BoundingBox, ChunkType, GroundingToken, TextChunk
 from .parser import (
     detect_chunk_type,
@@ -22,8 +24,7 @@ from .parser import (
 from .persistence import save_chunks_to_db
 
 __all__ = [
-    # Main classes
-    'GenealogicalTextChunker',
+    # Main functions
     'save_chunks_to_db',
     # Data models
     'ChunkType',
