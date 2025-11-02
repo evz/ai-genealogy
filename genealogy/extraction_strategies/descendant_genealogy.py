@@ -6,41 +6,16 @@ Two-phase extraction approach:
 """
 
 import logging
-import os
 from typing import Dict, Any
 
+from genealogy.prompts.extraction import (
+    build_extraction_prompt,
+    load_examples,
+    parse_extraction_output,
+)
 from .base import ExtractionStrategy
 
 logger = logging.getLogger(__name__)
-
-# Dutch abbreviations reference for extraction
-DUTCH_ABBREVIATIONS = """DUTCH GENEALOGICAL ABBREVIATIONS:
-* or geb. = geboren (born)
-~ or ged. = gedoopt (baptized)
-+ or † or overl. = overleden (died)
-begr. = begraven (buried)
-x or tr. or ondertr. = getrouwd/ondertrouwd (married)
-wednr. or wedn. = weduwnaar (widower)
-wed. = weduwe (widow)
-dv. = dochter van (daughter of)
-zv. = zoon van (son of)
-get. or getuige or Doopgetuige = witness (NOT a parent or spouse!)
-"""
-
-EVENT_TYPE_CODES = """EVENT TYPE CODES:
-BIRT = Birth
-DEAT = Death
-MARR = Marriage
-DIVR = Divorce
-BAPT = Baptism
-BURI = Burial
-RESI = Residence
-OCCU = Occupation
-EDUC = Education
-IMMI = Immigration
-EMIG = Emigration
-OTHER = Other events
-"""
 
 
 class DescendantGenealogyStrategy(ExtractionStrategy):
@@ -55,18 +30,6 @@ class DescendantGenealogyStrategy(ExtractionStrategy):
         """Initialize strategy and load examples"""
         self._examples = None
 
-    def _load_examples(self) -> str:
-        """Load extraction examples from text file"""
-        if self._examples is None:
-            examples_path = os.path.join(
-                os.path.dirname(os.path.dirname(__file__)),
-                'prompts',
-                'examples_extraction.txt'
-            )
-            with open(examples_path, 'r', encoding='utf-8') as f:
-                self._examples = f.read()
-        return self._examples
-
     @property
     def strategy_name(self) -> str:
         return "Descendant Genealogy Extraction"
@@ -79,163 +42,6 @@ class DescendantGenealogyStrategy(ExtractionStrategy):
         """Filter for GENEALOGY_ENTRY chunks only"""
         return {"chunk_type": "GENEALOGY_ENTRY"}
 
-    def build_prompt(self, chunk) -> str:
-        """Build extraction prompt with Phase 1 context"""
-        examples = self._load_examples()
-
-        # Build genealogical context
-        generation_info = f"Generation {chunk.generation_number}" if chunk.generation_number else "None"
-        family_group = chunk.family_groups[0] if chunk.family_groups else "None"
-
-        # Show Phase 1 extracted data (deterministic extraction from chunking)
-        phase1_people = chunk.extracted_people if chunk.extracted_people else []
-        phase1_relationships = chunk.extracted_relationships if chunk.extracted_relationships else []
-
-        # Format Phase 1 data for display
-        if phase1_people:
-            phase1_people_str = ", ".join(phase1_people)
-        else:
-            phase1_people_str = "None"
-
-        if phase1_relationships:
-            phase1_rels_str = f"{len(phase1_relationships)} parent-child relationships"
-        else:
-            phase1_rels_str = "None"
-
-        return f"""Extract genealogical information from Dutch genealogy text.
-
-{DUTCH_ABBREVIATIONS}
-
-{EVENT_TYPE_CODES}
-
-EXAMPLES:
-
-{examples}
-
-======================================================================
-YOUR TASK
-======================================================================
-
-CONTEXT:
-- Generation: {generation_info}
-- Family Group: {family_group}
-
-ALREADY EXTRACTED (Phase 1):
-- People: {phase1_people_str}
-- Relationships: {phase1_rels_str}
-
-CONTENT TO EXTRACT FROM:
-{chunk.text_content}
-
-INSTRUCTIONS:
-1. Extract ONLY information explicitly stated in the content above
-2. Focus on:
-   - Life events: births, deaths, baptisms, burials, marriages
-   - Occupations: any profession, job, or occupation mentioned (use OCCU event type)
-     * Look for occupations in the genealogical entry line (between dates/events)
-     * Look for occupations in narrative text and witness descriptions
-     * Extract each occupation as a separate OCCU event, even if multiple occupations are listed
-   - Residences: places where people lived (use RESI event type)
-   - Partnerships: marriages and relationships
-   - Additional people mentioned
-3. If the content has NO genealogical facts (just narrative/acknowledgments), return "None" for all sections
-4. Do NOT copy the examples or Phase 1 data
-5. For occupations with dates like "metselaar (1895)", include the date in the event
-
-OUTPUT FORMAT:
-
-PEOPLE:
-- List people mentioned (one per line, or "None")
-
-PARENT_CHILD:
-- PersonA|child|PersonB (or "None")
-
-PARTNERSHIPS:
-- PersonA|spouse|PersonB (or "None")
-
-EVENTS:
-- PersonName|EVENT_CODE|Date|Place (or "None")
-
-Extract now:
-"""
-
-    def parse_output(self, output_text: str) -> Dict[str, Any]:
-        """Parse the pipe-delimited output into structured data"""
-        lines = output_text.strip().split('\n')
-
-        result = {
-            'people': [],
-            'parent_child': [],
-            'partnerships': [],
-            'events': []
-        }
-
-        current_section = None
-
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-
-            # Detect section headers
-            if line.startswith('PEOPLE:'):
-                current_section = 'people'
-                continue
-            elif line.startswith('PARENT_CHILD:'):
-                current_section = 'parent_child'
-                continue
-            elif line.startswith('PARTNERSHIPS:'):
-                current_section = 'partnerships'
-                continue
-            elif line.startswith('EVENTS:'):
-                current_section = 'events'
-                continue
-            elif line.startswith('INTERPRETATION:'):
-                current_section = None
-                continue
-
-            # Skip "None" entries
-            if line.lower() == 'none' or line.lower() == '- none':
-                continue
-
-            # Parse based on current section
-            if current_section == 'people':
-                if line.startswith('-'):
-                    result['people'].append(line[1:].strip())
-
-            elif current_section == 'parent_child':
-                if line.startswith('-'):
-                    parts = line[1:].strip().split('|')
-                    if len(parts) == 3:
-                        result['parent_child'].append({
-                            'person1': parts[0].strip(),
-                            'relationship_type': parts[1].strip(),
-                            'person2': parts[2].strip()
-                        })
-
-            elif current_section == 'partnerships':
-                if line.startswith('-'):
-                    parts = line[1:].strip().split('|')
-                    if len(parts) == 3:
-                        result['partnerships'].append({
-                            'person1': parts[0].strip(),
-                            'relationship_type': parts[1].strip(),
-                            'person2': parts[2].strip()
-                        })
-
-            elif current_section == 'events':
-                if line.startswith('-'):
-                    parts = line[1:].strip().split('|')
-                    if len(parts) >= 2:
-                        result['events'].append({
-                            'person': parts[0].strip() if len(parts) > 0 else '',
-                            'event_type': parts[1].strip() if len(parts) > 1 else '',
-                            'date': parts[2].strip() if len(parts) > 2 else '',
-                            'place': parts[3].strip() if len(parts) > 3 else ''
-                        })
-
-        return result
-
     def extract(self, chunk, ollama, model: str) -> Dict[str, Any]:
         """
         Extract entities from a descendant genealogy chunk using LLM.
@@ -246,8 +52,12 @@ Extract now:
         try:
             logger.info(f"Extracting from chunk {chunk.sequence_number} (Descendant Genealogy)")
 
-            # Build extraction prompt
-            prompt = self.build_prompt(chunk)
+            # Load examples if not already loaded
+            if self._examples is None:
+                self._examples = load_examples()
+
+            # Build extraction prompt using shared utility
+            prompt = build_extraction_prompt(chunk, self._examples)
 
             # Calculate required context window based on chunk size
             estimated_tokens = len(chunk.text_content) // 4 + 4000
@@ -273,8 +83,8 @@ Extract now:
                     'error': 'No response from LLM'
                 }
 
-            # Parse output
-            extracted_data = self.parse_output(response)
+            # Parse output using shared utility
+            extracted_data = parse_extraction_output(response)
 
             # MERGE Phase 2 (LLM) data WITH Phase 1 (deterministic) data
             phase1_people = chunk.extracted_people or []
