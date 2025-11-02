@@ -656,6 +656,8 @@ class TextChunk(models.Model):
     CHUNK_TYPES = [
         ("HEADER", "Generation Header"),
         ("GENEALOGY_ENTRY", "Dense Biographical Entry"),
+        ("CITATION", "Source Citation"),
+        ("NARRATIVE", "Narrative/Context"),
         ("NARRATIVE_CONTEXT", "Related Context/Story"),
         ("CONTENT", "General Genealogy Content"),
         ("INDEX", "Index/Reference"),

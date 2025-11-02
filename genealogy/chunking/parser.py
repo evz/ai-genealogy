@@ -151,6 +151,14 @@ def detect_chunk_type(token: GroundingToken) -> ChunkType:
         if is_source_citation(content):
             return ChunkType.SOURCE_CITATION
 
+        # Check if it's a family group header (can be labeled as 'text' instead of 'sub_title')
+        if FAMILY_GROUP_PATTERN.match(content):
+            return ChunkType.FAMILY_GROUP_HEADER
+
+        # Check if it's a remarriage family group header
+        if REMARRIAGE_FAMILY_GROUP_PATTERN.match(content):
+            return ChunkType.FAMILY_GROUP_HEADER
+
         # Check if it's an individual entry (starts with letter + period)
         if INDIVIDUAL_ENTRY_PATTERN.match(content):
             return ChunkType.INDIVIDUAL_ENTRY
