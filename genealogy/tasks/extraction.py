@@ -1,12 +1,16 @@
-"""Entity extraction tasks and utilities for genealogy documents"""
+"""Entity extraction tasks and utilities for genealogy documents
+
+The business logic has been extracted to ExtractionService for better testability.
+"""
 import logging
 
 from django.core.exceptions import ValidationError
 
 from celery import shared_task
 
-from ..models import Document, TextChunk
+from ..models import Document
 from ..ollama_utils import OllamaClient, get_default_models
+from ..services import ExtractionService
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +57,9 @@ def extract_entities_from_chunks(self, document_id: str):  # noqa: ARG001
         model = document.llm_model_used or get_default_models()["llm_model"]
         logger.info(f"Using model: {model}")
 
+        # Initialize extraction service
+        extraction_service = ExtractionService(ollama)
+
         total_chunks_processed = 0
         total_chunks_failed = 0
         sections_processed = {}
@@ -92,25 +99,18 @@ def extract_entities_from_chunks(self, document_id: str):  # noqa: ARG001
                 }
                 continue
 
-            # Process each chunk with the strategy
-            section_processed = 0
-            section_failed = 0
+            # Use service to extract from chunks
+            result = extraction_service.extract_from_chunks_in_section(
+                chunks=unprocessed_chunks,
+                section_type=section.section_type,
+                model=model
+            )
 
-            for chunk in unprocessed_chunks:
-                # Check if strategy wants to process this chunk
-                if not strategy.should_process(chunk):
-                    continue
+            section_processed = result['processed']
+            section_failed = result['failed']
 
-                # Extract using the strategy
-                result = strategy.extract(chunk, ollama, model)
-
-                if result['success']:
-                    section_processed += 1
-                    total_chunks_processed += 1
-                else:
-                    section_failed += 1
-                    total_chunks_failed += 1
-                    logger.error(f"Failed to extract from chunk {chunk.sequence_number}: {result.get('error')}")
+            total_chunks_processed += section_processed
+            total_chunks_failed += section_failed
 
             sections_processed[section.title] = {
                 'strategy': strategy.strategy_name,

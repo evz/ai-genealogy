@@ -3,6 +3,8 @@
 This module handles chunking of OCR text using section-specific strategies.
 Different book sections (DESCENDANT_GENEALOGY, KWARTIERSTATEN, etc.) use
 different chunking approaches.
+
+The business logic has been extracted to ChunkingService for better testability.
 """
 import logging
 
@@ -11,8 +13,7 @@ from django.core.exceptions import ValidationError
 from celery import shared_task
 
 from ..models import Document
-from ..chunking.persistence import save_chunks_to_db
-from ..chunking_strategies import get_chunking_strategy
+from ..services import ChunkingService
 
 logger = logging.getLogger(__name__)
 
@@ -58,35 +59,22 @@ def create_document_chunks(self, document_id: str):  # noqa: ARG001
                 "document_id": str(document_id),
             }
 
+        # Initialize chunking service
+        chunking_service = ChunkingService()
+
         total_chunks_created = 0
         total_pages_processed = 0
         sections_processed = {}
-        all_saved_chunks = []
 
         # Process each section with its appropriate strategy
         for section in sections:
             logger.info(f"Processing section: {section.title} ({section.section_type}, pages {section.start_page}-{section.end_page})")
 
-            # Get the chunking strategy for this section type
-            try:
-                strategy = get_chunking_strategy(section.section_type)
-            except KeyError as e:
-                logger.error(f"Unknown section type: {section.section_type}")
-                sections_processed[section.title] = {
-                    'strategy': 'unknown',
-                    'chunks': 0,
-                    'status': 'error',
-                    'error': str(e)
-                }
-                continue
-
-            logger.info(f"Using strategy: {strategy.strategy_name}")
-
             # Check if strategy wants to process this section
-            if not strategy.should_process(section):
+            if not chunking_service.should_process_section(section.section_type, section):
                 logger.info(f"Strategy declined to process section")
                 sections_processed[section.title] = {
-                    'strategy': strategy.strategy_name,
+                    'strategy': section.section_type,
                     'chunks': 0,
                     'status': 'skipped'
                 }
@@ -102,7 +90,7 @@ def create_document_chunks(self, document_id: str):  # noqa: ARG001
             if not section_pages.exists():
                 logger.warning(f"No OCR-completed pages found for section {section.title}")
                 sections_processed[section.title] = {
-                    'strategy': strategy.strategy_name,
+                    'strategy': section.section_type,
                     'chunks': 0,
                     'status': 'no_pages'
                 }
@@ -133,31 +121,36 @@ def create_document_chunks(self, document_id: str):  # noqa: ARG001
             section_text = "\n\n".join(section_text_parts)
             logger.info(f"Section text: {len(section_text)} characters across {len(section_page_map)} pages")
 
-            # Chunk using the strategy
-            section_chunks = strategy.chunk_section(section_text, document, section_page_map)
-
-            # Save chunks to database
-            saved_chunks = save_chunks_to_db(
-                section_chunks,
-                document,
-                section_page_map,
-                section_text,
+            # Use service to chunk the section
+            result = chunking_service.chunk_section(
+                section_type=section.section_type,
+                section_text=section_text,
+                document=document,
+                page_map=section_page_map,
                 start_sequence=total_chunks_created + 1
             )
 
-            chunks_created = len(saved_chunks)
-            total_chunks_created += chunks_created
-            total_pages_processed += len(section_page_map)
-            all_saved_chunks.extend(saved_chunks)
+            if result['success']:
+                chunks_created = result['chunks_created']
+                total_chunks_created += chunks_created
+                total_pages_processed += len(section_page_map)
 
-            sections_processed[section.title] = {
-                'strategy': strategy.strategy_name,
-                'chunks': chunks_created,
-                'pages': len(section_page_map),
-                'status': 'success'
-            }
+                sections_processed[section.title] = {
+                    'strategy': section.section_type,
+                    'chunks': chunks_created,
+                    'pages': len(section_page_map),
+                    'status': 'success'
+                }
 
-            logger.info(f"Section '{section.title}' complete: {chunks_created} chunks created")
+                logger.info(f"Section '{section.title}' complete: {chunks_created} chunks created")
+            else:
+                logger.error(f"Failed to chunk section {section.title}: {result.get('error')}")
+                sections_processed[section.title] = {
+                    'strategy': section.section_type,
+                    'chunks': 0,
+                    'status': 'error',
+                    'error': result.get('error')
+                }
 
         logger.info(f"Chunking complete: {total_chunks_created} chunks across {len(sections_processed)} sections")
 

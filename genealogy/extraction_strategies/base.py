@@ -5,7 +5,12 @@ from typing import Dict, Any
 
 
 class ExtractionStrategy(ABC):
-    """Base class for section-specific extraction strategies"""
+    """Base class for section-specific extraction strategies
+
+    Strategies can use shared utilities (from genealogy.prompts.extraction) for
+    prompt building and output parsing, so these are not required as abstract methods.
+    Only the core workflow methods (should_process, extract, get_chunk_filter) are required.
+    """
 
     @abstractmethod
     def should_process(self, chunk) -> bool:
@@ -17,32 +22,6 @@ class ExtractionStrategy(ABC):
 
         Returns:
             True if the chunk should be processed by this strategy
-        """
-        pass
-
-    @abstractmethod
-    def build_prompt(self, chunk) -> str:
-        """
-        Build the extraction prompt for this chunk.
-
-        Args:
-            chunk: TextChunk model instance
-
-        Returns:
-            Prompt string for LLM
-        """
-        pass
-
-    @abstractmethod
-    def parse_output(self, output_text: str) -> Dict[str, Any]:
-        """
-        Parse the LLM output into structured data.
-
-        Args:
-            output_text: Raw text output from LLM
-
-        Returns:
-            Dictionary with parsed extraction data (format depends on strategy)
         """
         pass
 
