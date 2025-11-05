@@ -72,6 +72,9 @@ class TextChunk:
     individual_marker: Optional[str] = None  # e.g., "a.", "b.", "n."
     is_info_box: bool = False
 
+    # Subject tracking (for INDIVIDUAL_ENTRY chunks)
+    subject: Optional[str] = None  # The primary person this chunk is about
+
     # For source citations - link to the fact they support
     supports_chunk_index: Optional[int] = None
 

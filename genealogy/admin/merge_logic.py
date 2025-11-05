@@ -22,7 +22,8 @@ def merge_mentions(
     mention_ids: List[UUID],
     target_identity_id: UUID = None,
     merged_by: str = "unknown",
-    merge_reason: dict = None
+    merge_reason: dict = None,
+    preferred_genealogical_identifier: str = None
 ) -> Identity:
     """
     Merge multiple PersonMentions into a single Identity.
@@ -32,6 +33,7 @@ def merge_mentions(
         target_identity_id: Optional - reuse existing Identity, or create new one
         merged_by: Username performing the merge
         merge_reason: Dict with merge metadata (confidence, reasons, etc.)
+        preferred_genealogical_identifier: Optional - explicitly choose which genealogical_identifier to use
 
     Returns:
         The target Identity that all mentions now map to
@@ -51,16 +53,38 @@ def merge_mentions(
         # Collect all involved identities (before merge)
         old_identities = {m.identity for m in mappings}
 
+        # Determine best genealogical_identifier
+        # Priority: 1) explicit preference, 2) from mentions, 3) from old identities
+        genealogical_identifier = preferred_genealogical_identifier
+        if not genealogical_identifier:
+            # Try to get from mentions
+            for mention in mentions:
+                if mention.genealogical_id:
+                    genealogical_identifier = mention.genealogical_id
+                    break
+
+            # If still not found, try from old identities
+            if not genealogical_identifier:
+                for identity in old_identities:
+                    if identity.genealogical_identifier:
+                        genealogical_identifier = identity.genealogical_identifier
+                        break
+
         # Determine target identity
         if target_identity_id:
             target_identity = Identity.objects.get(id=target_identity_id)
+            # Update genealogical_identifier if we found a better one
+            if genealogical_identifier and not target_identity.genealogical_identifier:
+                target_identity.genealogical_identifier = genealogical_identifier
+                target_identity.save()
         else:
             # Create a new identity
             # Use the first mention's name as display name
             first_mention = mentions.first()
             target_identity = Identity.objects.create(
                 display_name=first_mention.full_name,
-                notes=f"Merged from {len(mention_ids)} mentions"
+                notes=f"Merged from {len(mention_ids)} mentions",
+                genealogical_identifier=genealogical_identifier
             )
 
         # Build merge event payload for reversibility

@@ -469,6 +469,9 @@ class TestIndividualEntryHandler:
             'person2': 'Pieter van Zanten'
         } in chunk.extracted_relationships
 
+        # Should set the subject field
+        assert chunk.subject == 'Pieter van Zanten'
+
     def test_no_phase1_extraction_without_generation(self):
         """Phase 1 extraction only runs if generation context exists"""
         handler = IndividualEntryHandler()

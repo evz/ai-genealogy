@@ -15,12 +15,11 @@ logger = logging.getLogger(__name__)
 class TextChunkAdmin(admin.ModelAdmin):
     list_display = [
         "__str__",
-        "document",
         "chunk_type",
         "sequence_number",
         "generation_number",
-        "char_count",
-        "token_count",
+        "subject",
+        "genealogical_identifier",
     ]
     list_filter = [
         "chunk_type",
@@ -30,11 +29,12 @@ class TextChunkAdmin(admin.ModelAdmin):
         "generation_number",
         "document",
     ]
-    search_fields = ["text_content", "generation_header"]
+    search_fields = ["text_content", "generation_header", "subject", "genealogical_identifier"]
     readonly_fields = [
         "id", "created_at", "updated_at", "document", "chunk_type", "sequence_number",
         "start_page", "end_page", "entities_extracted", "generation_number",
-        "generation_header", "family_groups", "related_entry_display", "text_content", "extraction_method",
+        "generation_header", "family_groups", "subject", "genealogical_identifier",
+        "related_entry_display", "text_content", "extraction_method",
         "formatted_people", "formatted_relationships", "formatted_events",
         "created_persons_display", "created_events_display", "created_relationships_display"
     ]
@@ -65,6 +65,8 @@ class TextChunkAdmin(admin.ModelAdmin):
                     "generation_number",
                     "generation_header",
                     "family_groups",
+                    "subject",
+                    "genealogical_identifier",
                     "related_entry_display",
                 ),
                 "description": "Genealogical context for this chunk.",

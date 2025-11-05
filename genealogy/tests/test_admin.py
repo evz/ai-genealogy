@@ -173,7 +173,7 @@ class AdminBatchUploadTests(TestCase):
                 Document.objects.all().delete()
                 DocumentPage.objects.all().delete()
 
-    @patch("genealogy.admin.process_page_ocr.delay")
+    @patch("genealogy.tasks.ocr.process_page_ocr.delay")
     def test_batch_upload_auto_starts_ocr(self, mock_task_delay):
         """Should automatically start OCR processing for uploaded files"""
         # Mock the Celery task
@@ -206,7 +206,7 @@ class AdminBatchUploadTests(TestCase):
         called_page_ids = {call[0][0] for call in mock_task_delay.call_args_list}
         self.assertEqual(page_ids, called_page_ids)
 
-    @patch("genealogy.admin.process_page_ocr.delay")
+    @patch("genealogy.tasks.ocr.process_page_ocr.delay")
     def test_document_page_ocr_action(self, mock_task_delay):
         """Should process OCR for selected document pages"""
         # Mock the Celery task
@@ -242,7 +242,7 @@ class AdminBatchUploadTests(TestCase):
         # Should only process unprocessed page
         mock_task_delay.assert_called_once_with(str(page1.id))
 
-    @patch("genealogy.admin.process_page_ocr.delay")
+    @patch("genealogy.tasks.ocr.process_page_ocr.delay")
     def test_document_page_reprocess_ocr_action(self, mock_task_delay):
         """Should reprocess OCR for selected document pages including completed ones"""
         # Mock the Celery task

@@ -425,3 +425,72 @@ class TestGenerationTwelveRegression:
         assert 'a. Isabella Marian Newton' in entry_content or any(
             'Isabella' in t.content for t in tokens if 'a.' in t.content
         )
+
+
+@pytest.mark.unit
+class TestDetectChunkType:
+    """Test detect_chunk_type() function"""
+
+    def test_individual_entry_at_start_of_text(self):
+        """Should detect individual entry when pattern is at start of text"""
+        token = create_grounding_token(
+            element_type='text',
+            content='a. John Smith, * 1850, † 1920',
+            bbox=(10, 10, 500, 30)
+        )
+
+        assert detect_chunk_type(token) == ChunkType.INDIVIDUAL_ENTRY
+
+    def test_individual_entry_after_newline(self):
+        """Should detect individual entry when pattern appears after a newline (regression test for IX.3.c bug)
+
+        This tests the fix for the issue where individual entries were merged into citation
+        chunks when they appeared after other text in the same grounding token.
+        Example: chunk 241 had a photo caption followed by "c. Frances Joan Kamp..."
+        """
+        token = create_grounding_token(
+            element_type='text',
+            content='''From left to right: Upper row: Fran K, John K, Tom K, Lower row: Frances vZ, Jim K, James K, Hani K. The positioning of the persons is remarkable similar to the picture of the Van Zanten- van Barneveld family.
+
+c. Frances Joan [Fran] Kamp, * Dearborn (Wayne, MI) 13.2.1928, † Bloomington (Hennepin, MN) 11.8.2007, administrative assistant''',
+            bbox=(10, 10, 500, 200)
+        )
+
+        # Should detect this as INDIVIDUAL_ENTRY because "c." appears at start of a line
+        assert detect_chunk_type(token) == ChunkType.INDIVIDUAL_ENTRY
+
+    def test_individual_entry_in_subtitle(self):
+        """Should detect individual entry when OCR labels it as sub_title"""
+        token = create_grounding_token(
+            element_type='sub_title',
+            content='b. Thomas George Kamp, * Detroit (MI) 1925',
+            bbox=(10, 10, 500, 30)
+        )
+
+        assert detect_chunk_type(token) == ChunkType.INDIVIDUAL_ENTRY
+
+    def test_individual_entry_with_multiline_content(self):
+        """Should detect individual entry even with multiple individuals in one token"""
+        token = create_grounding_token(
+            element_type='text',
+            content='''Some narrative text about the family.
+
+d. Dr James Nathaniel [Jim] Kamp, * Dearborn (MI) 14.11.1935
+e. Dr Hannah Gezina Alida [Honey] Kamp, * Dearborn (Wayne, MI) 13.3.1938''',
+            bbox=(10, 10, 500, 200)
+        )
+
+        # Should detect as INDIVIDUAL_ENTRY because "d." appears at start of a line
+        assert detect_chunk_type(token) == ChunkType.INDIVIDUAL_ENTRY
+
+    def test_not_individual_entry_when_letter_not_at_line_start(self):
+        """Should NOT detect individual entry when letter+period is mid-sentence"""
+        token = create_grounding_token(
+            element_type='text',
+            content='He was born in Amsterdam, e.g. in the Netherlands.',
+            bbox=(10, 10, 500, 30)
+        )
+
+        # Should be narrative, not individual entry (e.g. is not at start of line)
+        chunk_type = detect_chunk_type(token)
+        assert chunk_type in (ChunkType.NARRATIVE_CONTEXT, ChunkType.BIOGRAPHICAL_TEXT)

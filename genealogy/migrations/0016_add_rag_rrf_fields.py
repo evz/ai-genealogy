@@ -4,6 +4,7 @@ import django.contrib.postgres.fields
 import django.contrib.postgres.indexes
 import pgvector.django.indexes
 import pgvector.django.vector
+from django.contrib.postgres.operations import CreateExtension
 from django.db import migrations, models
 
 
@@ -14,6 +15,10 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # Create required PostgreSQL extensions before using them
+        CreateExtension('vector'),
+        CreateExtension('pg_trgm'),
+
         migrations.AddField(
             model_name='textchunk',
             name='chunk_no',

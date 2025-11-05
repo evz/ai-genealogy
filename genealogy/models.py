@@ -305,7 +305,7 @@ class PersonMention(models.Model):
     gender = models.CharField(max_length=1, choices=GENDER_CHOICES, default="U")
 
     # Genealogical identifiers (from Dutch family books)
-    genealogical_id = models.CharField(max_length=50, blank=True, help_text="e.g., II.1.a")
+    genealogical_id = models.CharField(max_length=50, blank=True, null=True, help_text="e.g., II.1.a")
     generation = models.PositiveIntegerField(null=True, blank=True, help_text="Generation number (I=1, II=2, etc.)")
 
     # Source tracking (immutable)
@@ -400,6 +400,15 @@ class Identity(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     display_name = models.CharField(max_length=500, help_text="Display name for this identity")
     notes = models.TextField(blank=True, help_text="Curator notes about this identity")
+
+    # Genealogical identifier (from Dutch family books)
+    genealogical_identifier = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        db_index=True,
+        help_text="Unique genealogical identifier (e.g., 'II.2.a' = generation.family_group.individual_marker)"
+    )
 
     # Soft-delete for reversibility
     is_deleted = models.BooleanField(default=False, help_text="True if this identity was absorbed into another")
@@ -749,6 +758,31 @@ class TextChunk(models.Model):
     extracted_events = models.JSONField(
         default=list, blank=True,
         help_text="Events: [{\"person\": \"...\", \"event_type\": \"BIRT|DEAT|MARR|etc\", \"date\": \"...\", \"place\": \"...\"}]"
+    )
+
+    # Subject tracking for individual entries
+    subject = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        help_text="The primary subject/person of this chunk (for INDIVIDUAL_ENTRY chunks)"
+    )
+    genealogical_identifier = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        db_index=True,
+        help_text="Unique genealogical identifier (e.g., 'II.2.a' = generation.family_group.individual_marker)"
+    )
+
+    # Link to the primary PersonMention for this chunk (for INDIVIDUAL_ENTRY chunks)
+    primary_person_mention = models.ForeignKey(
+        'PersonMention',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='primary_chunks',
+        help_text="The PersonMention for the subject of this chunk (only for INDIVIDUAL_ENTRY chunks)"
     )
 
     # Anchor positioning for chunk expansion

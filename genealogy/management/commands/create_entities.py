@@ -23,6 +23,7 @@ from genealogy.models import (
     TextChunk,
     Place,
 )
+from genealogy.utils import parse_name
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +64,38 @@ class Command(BaseCommand):
         if options['clean']:
             if self.dry_run:
                 self.stdout.write(self.style.WARNING("Would delete existing PersonMention/Identity/PartnershipMention/Event records"))
+                self.stdout.write(self.style.WARNING("(PersonMentions with genealogical_id will be preserved)"))
             else:
                 self.stdout.write("Deleting existing entities...")
-                Event.objects.all().delete()
+
+                # Delete events for PersonMentions WITHOUT genealogical_id
+                # (Events linked to chunking-created PersonMentions are preserved)
+                Event.objects.filter(mention__genealogical_id__isnull=True).delete()
+
+                # Delete all relationship mentions (these are recreated each time)
                 RelationshipMention.objects.all().delete()
+
+                # Delete all partnership mentions (these are recreated each time)
                 PartnershipMention.objects.all().delete()
-                MentionToIdentity.objects.all().delete()
-                Identity.objects.all().delete()
-                PersonMention.objects.all().delete()
-                self.stdout.write(self.style.SUCCESS("Existing entities deleted"))
+
+                # Delete MentionToIdentity mappings ONLY for PersonMentions without genealogical_id
+                MentionToIdentity.objects.filter(mention__genealogical_id__isnull=True).delete()
+
+                # Delete Identity records that have no remaining mappings
+                # (mention_mappings is the related_name from MentionToIdentity)
+                Identity.objects.filter(mention_mappings__isnull=True).delete()
+
+                # Delete PersonMentions that were created by create_entities (no genealogical_id)
+                # Preserve PersonMentions created during chunking (have genealogical_id)
+                deleted_count = PersonMention.objects.filter(genealogical_id__isnull=True).delete()[0]
+                preserved_count = PersonMention.objects.filter(genealogical_id__isnull=False).count()
+
+                self.stdout.write(self.style.SUCCESS(
+                    f"Existing entities deleted ({deleted_count} PersonMentions without genealogical_id)"
+                ))
+                self.stdout.write(self.style.SUCCESS(
+                    f"Preserved {preserved_count} PersonMentions with genealogical_id (from chunking)"
+                ))
 
         # Get chunks to process
         chunks = TextChunk.objects.filter(
@@ -118,8 +142,19 @@ class Command(BaseCommand):
         # Track persons created in this chunk for relationship linking
         chunk_persons = {}  # name -> PersonMention mapping
 
-        # Step 1: Create PersonMention records (always create new, never merge)
+        # Step 0: Check if this chunk already has a primary PersonMention (created during chunking)
+        # If so, add it to chunk_persons so relationships can reference it
+        if chunk.primary_person_mention and chunk.subject:
+            chunk_persons[chunk.subject] = chunk.primary_person_mention
+            logger.debug(f"Using existing PersonMention for subject '{chunk.subject}' (id={chunk.primary_person_mention.id})")
+
+        # Step 1: Create PersonMention records for other people mentioned in the chunk
+        # (Skip the subject if we already have a PersonMention for them)
         for person_name in chunk.extracted_people:
+            # Skip if we already have a PersonMention for this person
+            if person_name in chunk_persons:
+                continue
+
             # Determine this person's generation
             generation = self._determine_generation(person_name, chunk, parent_names_in_header)
 
@@ -375,7 +410,7 @@ class Command(BaseCommand):
         All deduplication happens later via the cluster_entities command.
         """
         # Parse name into parts
-        given_names, surname = self._parse_name(name)
+        given_names, surname = parse_name(name)
 
         if not self.dry_run:
             # Create the immutable person mention
@@ -409,43 +444,6 @@ class Command(BaseCommand):
 
         self.stats['persons_created'] += 1
         return person
-
-    def _parse_name(self, full_name: str) -> tuple[str, str]:
-        """Parse full name into given_names and surname"""
-        # Remove brackets: "Pieter [Peter]" -> "Pieter"
-        full_name = re.sub(r'\[.*?\]', '', full_name).strip()
-
-        # Clean up parenthetical notes that are not part of the name
-        # e.g. "Bessel van Zanten (son of Pieter)" -> "Bessel van Zanten"
-        full_name = re.sub(r'\s*\([^)]*\)\s*$', '', full_name).strip()
-
-        if not full_name:
-            return '', ''
-
-        parts = full_name.split()
-
-        # Handle Dutch name prefixes (van, de, van de, van der, van den, etc.)
-        if len(parts) >= 2:
-            # Check for two-word prefixes: "van de", "van der", "van den"
-            if len(parts) >= 3 and parts[-3].lower() == 'van' and parts[-2].lower() in ['de', 'der', 'den']:
-                surname = ' '.join(parts[-3:])
-                given_names = ' '.join(parts[:-3])
-            # Check for single-word prefixes: "van", "de", "der", "den"
-            elif parts[-2].lower() in ['van', 'de', 'der', 'den']:
-                surname = ' '.join(parts[-2:])
-                given_names = ' '.join(parts[:-2])
-            else:
-                # No prefix - last word is surname
-                surname = parts[-1]
-                given_names = ' '.join(parts[:-1])
-        elif len(parts) == 1:
-            # Single word - treat as surname
-            surname = parts[0]
-            given_names = ''
-        else:
-            return '', ''
-
-        return given_names, surname
 
     def _parse_date(self, date_str: str) -> tuple[Optional[datetime], bool]:
         """

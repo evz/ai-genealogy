@@ -21,12 +21,13 @@ class IdentityAdmin(admin.ModelAdmin):
 
     list_display = [
         "display_name",
+        "genealogical_identifier",
         "num_mentions",
         "is_deleted",
         "created_at",
     ]
     list_filter = ["is_deleted"]
-    search_fields = ["display_name", "notes"]
+    search_fields = ["display_name", "genealogical_identifier", "notes"]
 
     # Hide deleted identities by default
     def get_queryset(self, request):
@@ -53,6 +54,7 @@ class IdentityAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "display_name",
+                    "genealogical_identifier",
                     "notes",
                     "is_deleted",
                 ),

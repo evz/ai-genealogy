@@ -3,7 +3,9 @@
 import logging
 from typing import List, Tuple
 
-from django.db import models
+from django.db import models, transaction
+
+from genealogy.utils import parse_name
 
 from .models import ChunkType, GroundingToken, TextChunk
 
@@ -173,6 +175,36 @@ def save_chunks_to_db(
             if 0 <= chunk.supports_chunk_index < len(saved_chunks):
                 related_entry = saved_chunks[chunk.supports_chunk_index]
 
+        # Build genealogical identifier for INDIVIDUAL_ENTRY chunks
+        # Format: generation.family_group_id.individual_marker (e.g., "II.2.a")
+        genealogical_identifier = None
+        if chunk.chunk_type == ChunkType.INDIVIDUAL_ENTRY:
+            if chunk.family_group_id and chunk.individual_marker:
+                # Extract the letter from the marker (e.g., "a." -> "a")
+                marker_letter = chunk.individual_marker.rstrip('.')
+                genealogical_identifier = f"{chunk.family_group_id}.{marker_letter}"
+
+        # Create PersonMention for the subject if this is an individual entry
+        # ONLY create if we have a valid genealogical_identifier (genealogical_id is NOT NULL in DB)
+        primary_person_mention = None
+        if chunk.chunk_type == ChunkType.INDIVIDUAL_ENTRY and chunk.subject and genealogical_identifier:
+            from ..models import PersonMention as PersonMentionModel
+
+            # Parse name into given_names and surname
+            given_names, surname = parse_name(chunk.subject)
+
+            # Create PersonMention with genealogical_id
+            primary_person_mention = PersonMentionModel.objects.create(
+                given_names=given_names,
+                surname=surname,
+                generation=generation_number,
+                genealogical_id=genealogical_identifier,
+            )
+            # Link to document (will link to chunk after chunk is created)
+            primary_person_mention.source_documents.add(document)
+
+            logger.debug(f"Created PersonMention for {chunk.subject} with genealogical_id={genealogical_identifier}")
+
         # Create database chunk
         db_chunk = TextChunkModel.objects.create(
             document=document,
@@ -192,7 +224,15 @@ def save_chunks_to_db(
             extracted_events=chunk.extracted_events,
             # Keep entities_extracted=False so Phase 2 (LLM) will still process this chunk
             entities_extracted=False,
+            # Subject tracking (for INDIVIDUAL_ENTRY chunks)
+            subject=chunk.subject,
+            genealogical_identifier=genealogical_identifier,
+            primary_person_mention=primary_person_mention,
         )
         saved_chunks.append(db_chunk)
+
+        # Link PersonMention back to chunk
+        if primary_person_mention:
+            primary_person_mention.source_chunks.add(db_chunk)
 
     return saved_chunks

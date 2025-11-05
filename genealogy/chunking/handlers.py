@@ -217,6 +217,8 @@ class IndividualEntryHandler(ChunkHandler):
             person_name = extract_person_from_individual_entry(chunk.content)
             if person_name:
                 chunk.extracted_people.append(person_name)
+                # Set the subject - this is the primary person this chunk is about
+                chunk.subject = person_name
 
                 # Also extract parent names and create parent-child relationships
                 if chunk.parents:

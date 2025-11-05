@@ -123,7 +123,8 @@ def detect_chunk_type(token: GroundingToken) -> ChunkType:
 
         # Check if it's an individual entry (DeepSeek-OCR sometimes labels these as sub_title)
         # Individual entries like "a. Name" or "b. (hypothetisch) Name"
-        if INDIVIDUAL_ENTRY_PATTERN.match(content_stripped):
+        # Use .search() to find the pattern anywhere in multi-line content
+        if INDIVIDUAL_ENTRY_PATTERN.search(content_stripped):
             return ChunkType.INDIVIDUAL_ENTRY
 
         # Check if it's a generation header
@@ -148,10 +149,6 @@ def detect_chunk_type(token: GroundingToken) -> ChunkType:
 
     # Text content
     if element_type == 'text':
-        # Check if it's a source citation
-        if is_source_citation(content):
-            return ChunkType.SOURCE_CITATION
-
         # Check if it's a family group header (can be labeled as 'text' instead of 'sub_title')
         if FAMILY_GROUP_PATTERN.match(content):
             return ChunkType.FAMILY_GROUP_HEADER
@@ -161,8 +158,15 @@ def detect_chunk_type(token: GroundingToken) -> ChunkType:
             return ChunkType.FAMILY_GROUP_HEADER
 
         # Check if it's an individual entry (starts with letter + period)
-        if INDIVIDUAL_ENTRY_PATTERN.match(content):
+        # Use .search() instead of .match() to find the pattern anywhere in multi-line tokens
+        # IMPORTANT: Check this BEFORE is_source_citation() because entries may contain
+        # false-positive keywords like "BSc" which matches the "BS" citation keyword
+        if INDIVIDUAL_ENTRY_PATTERN.search(content):
             return ChunkType.INDIVIDUAL_ENTRY
+
+        # Check if it's a source citation
+        if is_source_citation(content):
+            return ChunkType.SOURCE_CITATION
 
         # Check if it's narrative vs biographical
         if is_biographical_text(content):

@@ -12,7 +12,7 @@ from django.core.exceptions import ValidationError
 
 from celery import shared_task
 
-from ..models import Document
+from ..models import Document, PersonMention
 from ..services import ChunkingService
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,18 @@ def create_document_chunks(self, document_id: str):  # noqa: ARG001
             }
 
         # Clear existing chunks for this document
+        # Also delete PersonMentions that were created during chunking (have genealogical_id)
+        # These are linked to chunks via primary_person_mention relationship
+        person_mentions_to_delete = PersonMention.objects.filter(
+            primary_chunks__document=document,
+            genealogical_id__isnull=False
+        )
+        deleted_person_count = person_mentions_to_delete.count()
+        person_mentions_to_delete.delete()
+
+        if deleted_person_count > 0:
+            logger.info(f"Deleted {deleted_person_count} PersonMentions with genealogical_id for document {document}")
+
         document.text_chunks.all().delete()
 
         # Get all book sections
