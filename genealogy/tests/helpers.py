@@ -28,11 +28,11 @@ def create_grounding_token(
     bbox_obj = BoundingBox(x1=bbox[0], y1=bbox[1], x2=bbox[2], y2=bbox[3])
 
     # Generate raw_match format that matches DeepSeek-OCR output
-    inverted_tag = '<|inverted|>true<|/inverted|>\n' if is_inverted else ''
+    inverted_tag = '<|inverted|>true<|/inverted|>' if is_inverted else ''
     raw_match = (
         f'<|ref|>{element_type}<|/ref|>'
         f'<|det|>[[{bbox[0]}, {bbox[1]}, {bbox[2]}, {bbox[3]}]]<|/det|>'
-        f'{inverted_tag}{content}'
+        f'{inverted_tag}\n{content}'
     )
 
     return GroundingToken(
@@ -148,6 +148,26 @@ def create_mock_ollama_response(
     lines.append('')
 
     return '\n'.join(lines)
+
+
+def create_ocr_text(tokens: List[Dict[str, Any]]) -> str:
+    """
+    Create OCR text in DeepSeek format from token specs.
+
+    Args:
+        tokens: List of dicts with keys: content, element_type, bbox (optional), is_inverted (optional)
+
+    Returns:
+        OCR text string with grounding tokens in DeepSeek format
+
+    Example:
+        ocr_text = create_ocr_text([
+            {'content': 'Tweede generatie', 'element_type': 'sub_title'},
+            {'content': 'a. Pieter van Zanten', 'element_type': 'text'},
+        ])
+    """
+    token_objs = create_token_sequence(tokens)
+    return '\n\n'.join(token.raw_match for token in token_objs)
 
 
 def load_fixture(fixture_name: str) -> str:

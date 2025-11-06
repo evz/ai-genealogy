@@ -130,22 +130,8 @@ def save_chunks_to_db(
     }
 
     for i, chunk in enumerate(non_empty_chunks, start=start_sequence):
-        # Map ChunkType enum to database choices
-        chunk_type_map = {
-            ChunkType.GENERATION_HEADER: "HEADER",
-            ChunkType.FAMILY_GROUP_HEADER: "HEADER",
-            ChunkType.INDIVIDUAL_ENTRY: "GENEALOGY_ENTRY",
-            ChunkType.BIOGRAPHICAL_TEXT: "GENEALOGY_ENTRY",
-            ChunkType.SOURCE_CITATION: "CITATION",
-            ChunkType.NARRATIVE_CONTEXT: "NARRATIVE",
-            ChunkType.INFO_BOX: "NARRATIVE",
-            ChunkType.IMAGE: "OTHER",
-            ChunkType.IMAGE_CAPTION: "OTHER",
-            ChunkType.TABLE: "OTHER",
-            ChunkType.UNKNOWN: "OTHER",
-        }
-
-        db_chunk_type = chunk_type_map.get(chunk.chunk_type, "OTHER")
+        # Use enum value directly as chunk type
+        db_chunk_type = chunk.chunk_type.value
 
         # Extract generation header text if this is a generation header
         generation_header = ""

@@ -35,12 +35,12 @@ class DescendantGenealogyStrategy(ExtractionStrategy):
         return "Descendant Genealogy Extraction"
 
     def should_process(self, chunk) -> bool:
-        """Process GENEALOGY_ENTRY chunks that have genealogical context"""
-        return chunk.chunk_type == "GENEALOGY_ENTRY"
+        """Process individual_entry chunks that have genealogical context"""
+        return chunk.chunk_type == "individual_entry"
 
     def get_chunk_filter(self) -> Dict[str, Any]:
-        """Filter for GENEALOGY_ENTRY chunks only"""
-        return {"chunk_type": "GENEALOGY_ENTRY"}
+        """Filter for individual_entry chunks only"""
+        return {"chunk_type": "individual_entry"}
 
     def extract(self, chunk, ollama, model: str) -> Dict[str, Any]:
         """

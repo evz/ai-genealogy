@@ -76,7 +76,7 @@ class TestSaveChunksToDb:
         assert db_chunk.genealogical_identifier == "II.3.a"
 
         # Verify chunk type
-        assert db_chunk.chunk_type == "GENEALOGY_ENTRY"
+        assert db_chunk.chunk_type == "individual_entry"
 
         # Verify other fields are still correct
         assert db_chunk.generation_number == 2

@@ -663,18 +663,17 @@ class TextChunk(models.Model):
     """Text chunk extracted from a document with genealogical anchors"""
 
     CHUNK_TYPES = [
-        ("HEADER", "Generation Header"),
-        ("GENEALOGY_ENTRY", "Dense Biographical Entry"),
-        ("CITATION", "Source Citation"),
-        ("NARRATIVE", "Narrative/Context"),
-        ("NARRATIVE_CONTEXT", "Related Context/Story"),
-        ("CONTENT", "General Genealogy Content"),
-        ("INDEX", "Index/Reference"),
-        ("KWARTIERSTATEN_HEADER", "Kwartierstaten Section Header"),
-        ("KWARTIERSTATEN", "Kwartierstaten Content"),
-        ("APPENDIX_HEADER", "Appendix/Register Header"),
-        ("APPENDIX", "Appendix/Register Content"),
-        ("OTHER", "Other"),
+        ("generation_header", "Generation Header"),
+        ("family_group_header", "Family Group Header"),
+        ("individual_entry", "Individual Entry"),
+        ("biographical_text", "Biographical Text"),
+        ("source_citation", "Source Citation"),
+        ("narrative_context", "Narrative Context"),
+        ("info_box", "Info Box"),
+        ("image", "Image"),
+        ("image_caption", "Image Caption"),
+        ("table", "Table"),
+        ("unknown", "Unknown"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -682,7 +681,7 @@ class TextChunk(models.Model):
 
     # Content
     text_content = models.TextField(help_text="The actual text content of this chunk")
-    chunk_type = models.CharField(max_length=30, choices=CHUNK_TYPES, default="CONTENT")
+    chunk_type = models.CharField(max_length=30, choices=CHUNK_TYPES, default="unknown")
 
     # Position information
     start_page = models.PositiveIntegerField(help_text="First page number this chunk appears on")
