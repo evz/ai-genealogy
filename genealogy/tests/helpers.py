@@ -1,7 +1,8 @@
 """Test helper functions and fixtures for genealogy tests"""
 
-from typing import Optional, List, Dict, Any
-from genealogy.chunking.models import GroundingToken, BoundingBox
+from typing import Any, Dict, List, Optional
+
+from genealogy.chunking.models import BoundingBox, GroundingToken
 
 
 def create_grounding_token(

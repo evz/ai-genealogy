@@ -1,6 +1,6 @@
 """Skip extraction strategy for sections that don't need processing"""
 
-from typing import Dict, Any
+from typing import Any, Dict
 
 from .base import ExtractionStrategy
 

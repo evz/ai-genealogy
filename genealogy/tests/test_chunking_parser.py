@@ -3,13 +3,11 @@
 import pytest
 
 from genealogy.chunking.models import ChunkType
-from genealogy.chunking.parser import (
-    detect_chunk_type,
-    extract_person_from_individual_entry,
-    is_biographical_text,
-    is_source_citation,
-    parse_grounding_tokens,
-)
+from genealogy.chunking.parser import (detect_chunk_type,
+                                       extract_person_from_individual_entry,
+                                       is_biographical_text,
+                                       is_source_citation,
+                                       parse_grounding_tokens)
 from genealogy.tests.helpers import create_grounding_token, load_fixture
 
 

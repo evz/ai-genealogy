@@ -13,14 +13,10 @@ genealogy.chunking_strategies (see DescendantGenealogyChunkingStrategy).
 """
 
 from .models import BoundingBox, ChunkType, GroundingToken, TextChunk
-from .parser import (
-    detect_chunk_type,
-    detect_info_box_boundary,
-    extract_person_from_individual_entry,
-    is_biographical_text,
-    is_source_citation,
-    parse_grounding_tokens,
-)
+from .parser import (detect_chunk_type, detect_info_box_boundary,
+                     extract_person_from_individual_entry,
+                     is_biographical_text, is_source_citation,
+                     parse_grounding_tokens)
 from .persistence import save_chunks_to_db
 
 __all__ = [

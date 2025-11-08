@@ -6,10 +6,10 @@ it easier to test and reuse.
 """
 
 import logging
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
-from ..chunking_strategies import get_chunking_strategy
 from ..chunking.persistence import save_chunks_to_db
+from ..chunking_strategies import get_chunking_strategy
 
 logger = logging.getLogger(__name__)
 

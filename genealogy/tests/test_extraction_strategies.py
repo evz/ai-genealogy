@@ -3,7 +3,8 @@ from unittest.mock import Mock, patch
 
 from django.test import TestCase
 
-from genealogy.extraction_strategies.descendant_genealogy import DescendantGenealogyStrategy
+from genealogy.extraction_strategies.descendant_genealogy import \
+    DescendantGenealogyStrategy
 from genealogy.models import Document, TextChunk
 
 

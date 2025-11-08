@@ -179,17 +179,29 @@ def save_chunks_to_db(
             # Parse name into given_names and surname
             given_names, surname = parse_name(chunk.subject)
 
-            # Create PersonMention with genealogical_id
-            primary_person_mention = PersonMentionModel.objects.create(
-                given_names=given_names,
-                surname=surname,
-                generation=generation_number,
-                genealogical_id=genealogical_identifier,
-            )
-            # Link to document (will link to chunk after chunk is created)
-            primary_person_mention.source_documents.add(document)
+            # Validate name quality:
+            # 1. MUST have both given_names and surname, OR
+            # 2. If only given_names, MUST have genealogical_identifier (provides context)
+            has_both_names = given_names.strip() and surname.strip()
+            has_contextual_given_name = given_names.strip() and genealogical_identifier
 
-            logger.debug(f"Created PersonMention for {chunk.subject} with genealogical_id={genealogical_identifier}")
+            if has_both_names or has_contextual_given_name:
+                # Create PersonMention with genealogical_id
+                primary_person_mention = PersonMentionModel.objects.create(
+                    given_names=given_names,
+                    surname=surname,
+                    generation=generation_number,
+                    genealogical_id=genealogical_identifier,
+                )
+                # Link to document (will link to chunk after chunk is created)
+                primary_person_mention.source_documents.add(document)
+
+                logger.debug(f"Created PersonMention for {chunk.subject} with genealogical_id={genealogical_identifier}")
+            else:
+                logger.warning(
+                    f"Skipping PersonMention creation for chunk {i}: subject '{chunk.subject}' "
+                    f"lacks sufficient name information (given_names='{given_names}', surname='{surname}')"
+                )
 
         # Create database chunk
         db_chunk = TextChunkModel.objects.create(

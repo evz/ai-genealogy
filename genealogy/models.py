@@ -5,7 +5,7 @@ from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVectorField
 from django.db import models
 from django.utils import timezone
-from pgvector.django import VectorField, IvfflatIndex
+from pgvector.django import IvfflatIndex, VectorField
 
 from .fields import CommaSeparatedArrayField
 

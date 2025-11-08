@@ -4,9 +4,9 @@ from django.contrib import admin, messages
 from django.urls import reverse
 from django.utils.html import format_html
 
-from ..models import TextChunk, PersonMention, Event, RelationshipMention
-from ..ollama_utils import OllamaClient, get_default_models
 from ..extraction_strategies import get_strategy
+from ..models import Event, PersonMention, RelationshipMention, TextChunk
+from ..ollama_utils import OllamaClient, get_default_models
 
 logger = logging.getLogger(__name__)
 

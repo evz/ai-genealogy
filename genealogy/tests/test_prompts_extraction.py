@@ -1,16 +1,14 @@
 """Tests for extraction prompts and parsers"""
-from unittest.mock import Mock, patch, mock_open
+from unittest.mock import Mock, mock_open, patch
 
 from django.test import TestCase
 
-from genealogy.models import TextChunk, Document
-from genealogy.prompts.extraction import (
-    build_extraction_prompt,
-    parse_extraction_output,
-    load_examples,
-    DUTCH_ABBREVIATIONS,
-    EVENT_TYPE_CODES,
-)
+from genealogy.models import Document, TextChunk
+from genealogy.prompts.extraction import (DUTCH_ABBREVIATIONS,
+                                          EVENT_TYPE_CODES,
+                                          build_extraction_prompt,
+                                          load_examples,
+                                          parse_extraction_output)
 
 
 class TestLoadExamples(TestCase):

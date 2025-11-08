@@ -2,10 +2,9 @@
 import logging
 import os
 
+from celery import shared_task
 from django.conf import settings
 from django.core.exceptions import ValidationError
-
-from celery import shared_task
 from pdf2image import convert_from_path
 from PIL import Image
 

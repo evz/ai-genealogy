@@ -12,17 +12,9 @@ from typing import Optional
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from genealogy.models import (
-    Document,
-    PersonMention,
-    Identity,
-    MentionToIdentity,
-    PartnershipMention,
-    Event,
-    RelationshipMention,
-    TextChunk,
-    Place,
-)
+from genealogy.models import (Document, Event, Identity, MentionToIdentity,
+                              PartnershipMention, PersonMention, Place,
+                              RelationshipMention, TextChunk)
 from genealogy.utils import parse_name
 
 logger = logging.getLogger(__name__)
@@ -133,6 +125,17 @@ class Command(BaseCommand):
         self.stdout.write(f"  Events created: {self.stats['events_created']}")
         self.stdout.write(f"\nNote: All persons created separately - use detect_duplicates to find matches")
 
+    def _has_relationships(self, person_name: str, chunk: TextChunk) -> bool:
+        """
+        Check if a person name appears in any relationships in the chunk.
+
+        Returns True if the person is mentioned in parent-child or spouse relationships.
+        """
+        for rel in chunk.extracted_relationships:
+            if rel.get('person1') == person_name or rel.get('person2') == person_name:
+                return True
+        return False
+
     def _process_chunk(self, chunk: TextChunk):
         """Process a single chunk to create entities"""
 
@@ -158,9 +161,13 @@ class Command(BaseCommand):
             # Determine this person's generation
             generation = self._determine_generation(person_name, chunk, parent_names_in_header)
 
+            # Check if this person has relational context
+            has_rels = self._has_relationships(person_name, chunk)
+
             # Create person mention and singleton identity
-            person = self._create_person_mention(person_name, generation, chunk)
-            chunk_persons[person_name] = person
+            person = self._create_person_mention(person_name, generation, chunk, has_relationships=has_rels)
+            if person:
+                chunk_persons[person_name] = person
 
         # Step 1.5: Create Partnership from family group header
         # This ensures parent partnerships are created even if LLM didn't extract them
@@ -217,16 +224,20 @@ class Command(BaseCommand):
                 parent = chunk_persons.get(parent_name)
                 if not parent and parent_name:
                     # Create PersonMention on-the-fly for missing parent
+                    # By definition, this person has relationships (they're being created here)
                     logger.warning(f"Creating on-the-fly PersonMention for '{parent_name}' (referenced in relationship but not in extracted_people)")
-                    parent = self._create_person_mention(parent_name, None, chunk)
-                    chunk_persons[parent_name] = parent
+                    parent = self._create_person_mention(parent_name, None, chunk, has_relationships=True)
+                    if parent:
+                        chunk_persons[parent_name] = parent
 
                 child = chunk_persons.get(child_name)
                 if not child and child_name:
                     # Create PersonMention on-the-fly for missing child
+                    # By definition, this person has relationships (they're being created here)
                     logger.warning(f"Creating on-the-fly PersonMention for '{child_name}' (referenced in relationship but not in extracted_people)")
-                    child = self._create_person_mention(child_name, None, chunk)
-                    chunk_persons[child_name] = child
+                    child = self._create_person_mention(child_name, None, chunk, has_relationships=True)
+                    if child:
+                        chunk_persons[child_name] = child
 
                 if child and parent:
                     if not self.dry_run:
@@ -242,15 +253,19 @@ class Command(BaseCommand):
                 # Get or create mentions for both people
                 person1 = chunk_persons.get(person1_name)
                 if not person1 and person1_name:
+                    # By definition, this person has relationships (they're being created here)
                     logger.warning(f"Creating on-the-fly PersonMention for '{person1_name}' (referenced in spouse relationship but not in extracted_people)")
-                    person1 = self._create_person_mention(person1_name, None, chunk)
-                    chunk_persons[person1_name] = person1
+                    person1 = self._create_person_mention(person1_name, None, chunk, has_relationships=True)
+                    if person1:
+                        chunk_persons[person1_name] = person1
 
                 person2 = chunk_persons.get(person2_name)
                 if not person2 and person2_name:
+                    # By definition, this person has relationships (they're being created here)
                     logger.warning(f"Creating on-the-fly PersonMention for '{person2_name}' (referenced in spouse relationship but not in extracted_people)")
-                    person2 = self._create_person_mention(person2_name, None, chunk)
-                    chunk_persons[person2_name] = person2
+                    person2 = self._create_person_mention(person2_name, None, chunk, has_relationships=True)
+                    if person2:
+                        chunk_persons[person2_name] = person2
 
                 if person1 and person2:
                     if not self.dry_run:
@@ -402,15 +417,39 @@ class Command(BaseCommand):
         # Default: chunk generation
         return chunk.generation_number
 
-    def _create_person_mention(self, name: str, generation: int, chunk: TextChunk) -> PersonMention:
+    def _create_person_mention(self, name: str, generation: int, chunk: TextChunk,
+                               has_relationships: bool = False) -> PersonMention:
         """
         Create a new PersonMention record and singleton Identity.
 
         Each mention gets its own Identity initially.
         All deduplication happens later via the cluster_entities command.
+
+        Args:
+            name: Full name string to parse
+            generation: Generation number
+            chunk: Source TextChunk
+            has_relationships: Whether this person has parent/child/spouse relationships
+                             (allows creation with just given_names if true)
+
+        Returns:
+            PersonMention instance or None if validation fails
         """
         # Parse name into parts
         given_names, surname = parse_name(name)
+
+        # Validate name quality:
+        # 1. MUST have both given_names and surname, OR
+        # 2. If only given_names, MUST have relational context (parents/children/spouse)
+        has_both_names = given_names.strip() and surname.strip()
+        has_contextual_given_name = given_names.strip() and has_relationships
+
+        if not (has_both_names or has_contextual_given_name):
+            logger.warning(
+                f"Skipping PersonMention creation for '{name}': insufficient name information "
+                f"(given_names='{given_names}', surname='{surname}', has_relationships={has_relationships})"
+            )
+            return None
 
         if not self.dry_run:
             # Create the immutable person mention

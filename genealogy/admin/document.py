@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from django import forms
 from django.contrib import admin, messages
 from django.db import transaction
-from django.shortcuts import redirect, render, get_object_or_404
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
@@ -14,20 +14,11 @@ from django.utils.html import format_html
 if TYPE_CHECKING:
     from django.core.files.uploadedfile import UploadedFile
 
-from ..models import (
-    Document,
-    DocumentPage,
-    Event,
-    Place,
-    PotentialDuplicate,
-    TextChunk,
-)
+from ..models import (Document, DocumentPage, Event, Place, PotentialDuplicate,
+                      TextChunk)
 from ..ollama_utils import OllamaClient, get_default_models
-from ..tasks import (
-    create_document_chunks,
-    extract_entities_from_chunks,
-    process_page_ocr,
-)
+from ..tasks import (create_document_chunks, extract_entities_from_chunks,
+                     process_page_ocr)
 
 logger = logging.getLogger(__name__)
 

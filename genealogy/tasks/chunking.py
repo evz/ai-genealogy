@@ -8,9 +8,8 @@ The business logic has been extracted to ChunkingService for better testability.
 """
 import logging
 
-from django.core.exceptions import ValidationError
-
 from celery import shared_task
+from django.core.exceptions import ValidationError
 
 from ..models import Document, PersonMention
 from ..services import ChunkingService

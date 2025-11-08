@@ -9,7 +9,8 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
 
 from .models import ChunkType, GroundingToken, TextChunk
-from .parser import FAMILY_GROUP_PATTERN, GENERATION_PATTERN, INDIVIDUAL_ENTRY_PATTERN, REMARRIAGE_FAMILY_GROUP_PATTERN
+from .parser import (FAMILY_GROUP_PATTERN, GENERATION_PATTERN,
+                     INDIVIDUAL_ENTRY_PATTERN, REMARRIAGE_FAMILY_GROUP_PATTERN)
 
 
 class ChunkHandler(ABC):
@@ -153,7 +154,8 @@ class IndividualEntryHandler(ChunkHandler):
         context: dict,
         chunks: List[TextChunk],
     ) -> Tuple[TextChunk, int]:
-        from .parser import detect_chunk_type, extract_person_from_individual_entry
+        from .parser import (detect_chunk_type,
+                             extract_person_from_individual_entry)
 
         match = INDIVIDUAL_ENTRY_PATTERN.match(token.content)
         if match:

@@ -6,10 +6,10 @@ for text chunks to enable semantic search in the RAG+RRF system.
 """
 
 import logging
-import requests
 import time
 from typing import Optional
 
+import requests
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction

@@ -9,10 +9,10 @@ import logging
 import re
 from typing import List, Set
 
+from abydos.phonetic import DaitchMokotoff
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from abydos.phonetic import DaitchMokotoff
 from genealogy.models import TextChunk
 
 logger = logging.getLogger(__name__)

@@ -8,13 +8,8 @@ from django.shortcuts import redirect, render
 from django.urls import path, reverse
 from django.utils import timezone
 
-from ..models import (
-    Identity,
-    MentionToIdentity,
-    MergeEvent,
-    PersonMention,
-    PotentialDuplicate,
-)
+from ..models import (Identity, MentionToIdentity, MergeEvent, PersonMention,
+                      PotentialDuplicate)
 from .merge_logic import merge_mentions, unmerge_mentions
 
 logger = logging.getLogger(__name__)

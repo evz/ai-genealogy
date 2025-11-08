@@ -5,7 +5,8 @@ from unittest.mock import Mock, patch
 from django.test import TestCase
 
 from genealogy.chunking.models import ChunkType
-from genealogy.models import BookSection, Document, DocumentPage, PersonMention, TextChunk
+from genealogy.models import (BookSection, Document, DocumentPage,
+                              PersonMention, TextChunk)
 from genealogy.tasks.chunking import create_document_chunks
 
 from .helpers import create_ocr_text

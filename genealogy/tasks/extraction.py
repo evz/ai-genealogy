@@ -4,10 +4,11 @@ The business logic has been extracted to ExtractionService for better testabilit
 """
 import logging
 
-from django.core.exceptions import ValidationError
-
 from celery import shared_task
+from django.core.exceptions import ValidationError
+from django.db.models import Q
 
+from ..extraction_strategies import get_strategy
 from ..models import Document
 from ..ollama_utils import OllamaClient, get_default_models
 from ..services import ExtractionService
@@ -30,9 +31,6 @@ def extract_entities_from_chunks(self, document_id: str):  # noqa: ARG001
         dict: Extraction result summary
     """
     try:
-        from django.db.models import Q
-        from ..extraction_strategies import get_strategy
-
         # Get the document
         document = Document.objects.get(id=document_id)
         logger.info(f"Starting entity extraction for document {document}")

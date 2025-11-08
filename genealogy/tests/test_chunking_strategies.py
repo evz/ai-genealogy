@@ -2,9 +2,8 @@
 from django.test import TestCase
 
 from genealogy.chunking.models import ChunkType
-from genealogy.chunking_strategies.descendant_genealogy import (
-    DescendantGenealogyChunkingStrategy,
-)
+from genealogy.chunking_strategies.descendant_genealogy import \
+    DescendantGenealogyChunkingStrategy
 from genealogy.models import Document
 
 from .helpers import create_ocr_text

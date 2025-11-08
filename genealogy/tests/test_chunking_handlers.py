@@ -10,14 +10,11 @@ Tests focus on edge cases and special logic in handlers, including:
 
 import pytest
 
-from genealogy.chunking.handlers import (
-    CHUNK_HANDLERS,
-    DefaultChunkHandler,
-    FamilyGroupHeaderHandler,
-    GenerationHeaderHandler,
-    IndividualEntryHandler,
-    StandaloneSourceCitationHandler,
-)
+from genealogy.chunking.handlers import (CHUNK_HANDLERS, DefaultChunkHandler,
+                                         FamilyGroupHeaderHandler,
+                                         GenerationHeaderHandler,
+                                         IndividualEntryHandler,
+                                         StandaloneSourceCitationHandler)
 from genealogy.chunking.models import ChunkType
 from genealogy.tests.helpers import create_token_sequence
 

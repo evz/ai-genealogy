@@ -9,7 +9,8 @@ Uses Reciprocal Rank Fusion to combine results from all three approaches.
 
 import logging
 import re
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
+
 from django.db import connection
 
 from .ollama_utils import OllamaClient

@@ -10,7 +10,7 @@ from typing import Dict, Set
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from genealogy.models import Person, ParentChildRelationship
+from genealogy.models import ParentChildRelationship, Person
 
 logger = logging.getLogger(__name__)
 

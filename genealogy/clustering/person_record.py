@@ -6,7 +6,7 @@ for use in similarity calculation and clustering.
 """
 from typing import Dict, Set
 
-from genealogy.models import PersonMention, MentionToIdentity
+from genealogy.models import MentionToIdentity, PersonMention
 
 
 class PersonRecord:

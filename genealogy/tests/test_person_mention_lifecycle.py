@@ -9,7 +9,8 @@ Tests that PersonMentions created during chunking (with genealogical_id) are:
 import pytest
 from django.core.management import call_command
 
-from genealogy.models import BookSection, Document, DocumentPage, PersonMention, TextChunk
+from genealogy.models import (BookSection, Document, DocumentPage,
+                              PersonMention, TextChunk)
 from genealogy.tasks.chunking import create_document_chunks
 
 

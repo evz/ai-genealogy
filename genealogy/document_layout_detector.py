@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 from django.conf import settings
-
 from doclayout_yolo import YOLOv10
 from PIL import Image
 from shapely.geometry import box as shapely_box

@@ -6,9 +6,9 @@ This package implements the clustering algorithms from:
 - "Unsupervised Graph-based Entity Resolution for Accurate and Efficient Family Pedigree Search"
 """
 
+from .graph import DependencyGraph
 from .nodes import AtomicNode, RelationalNode
 from .person_record import PersonRecord
-from .graph import DependencyGraph
 
 __all__ = [
     'AtomicNode',

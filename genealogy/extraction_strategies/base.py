@@ -1,7 +1,7 @@
 """Base extraction strategy for section-specific extraction"""
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Any, Dict
 
 
 class ExtractionStrategy(ABC):

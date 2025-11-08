@@ -6,13 +6,12 @@ Two-phase extraction approach:
 """
 
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
-from genealogy.prompts.extraction import (
-    build_extraction_prompt,
-    load_examples,
-    parse_extraction_output,
-)
+from genealogy.prompts.extraction import (build_extraction_prompt,
+                                          load_examples,
+                                          parse_extraction_output)
+
 from .base import ExtractionStrategy
 
 logger = logging.getLogger(__name__)

@@ -3,10 +3,11 @@ Management command to test hybrid RAG+RRF retrieval and answer genealogical ques
 """
 
 import logging
+
 from django.core.management.base import BaseCommand
 
-from genealogy.retrieval import HybridRetriever
 from genealogy.ollama_utils import OllamaClient
+from genealogy.retrieval import HybridRetriever
 
 logger = logging.getLogger(__name__)
 

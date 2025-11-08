@@ -4,11 +4,12 @@ This module tests the pure business logic services (ChunkingService and Extracti
 that orchestrate the chunking and extraction processes.
 """
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
 
-from genealogy.services import ChunkingService, ExtractionService
+import pytest
+
 from genealogy.chunking.models import ChunkType
+from genealogy.services import ChunkingService, ExtractionService
 
 
 @pytest.mark.unit

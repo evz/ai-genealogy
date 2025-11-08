@@ -14,13 +14,14 @@ Uses dependency graphs, constraint propagation, and hierarchical clustering to:
 """
 import logging
 from collections import defaultdict
-from typing import Set, List
+from typing import List, Set
 
 from django.core.management.base import BaseCommand
 from django.db.models import Prefetch
 
 from genealogy.clustering import DependencyGraph, PersonRecord
-from genealogy.models import PersonMention, PartnershipMention, RelationshipMention, PotentialDuplicate
+from genealogy.models import (PartnershipMention, PersonMention,
+                              PotentialDuplicate, RelationshipMention)
 
 logger = logging.getLogger(__name__)
 

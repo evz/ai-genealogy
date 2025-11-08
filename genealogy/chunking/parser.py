@@ -5,7 +5,6 @@ from typing import List, Optional
 
 from .models import BoundingBox, ChunkType, GroundingToken
 
-
 # Regex patterns for token parsing and classification
 
 # Grounding token pattern - captures DeepSeek-OCR grounding tokens

@@ -6,7 +6,7 @@ making it easier to test and reuse.
 """
 
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
 from ..extraction_strategies import get_strategy
 

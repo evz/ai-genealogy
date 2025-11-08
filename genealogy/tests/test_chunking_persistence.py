@@ -4,9 +4,12 @@ This module tests the persistence layer that saves chunks to the database.
 """
 
 import pytest
-from genealogy.chunking.models import ChunkType, TextChunk, GroundingToken, BoundingBox
+
+from genealogy.chunking.models import (BoundingBox, ChunkType, GroundingToken,
+                                       TextChunk)
 from genealogy.chunking.persistence import save_chunks_to_db
-from genealogy.models import Document, PersonMention, TextChunk as TextChunkModel
+from genealogy.models import Document, PersonMention
+from genealogy.models import TextChunk as TextChunkModel
 
 
 @pytest.mark.django_db

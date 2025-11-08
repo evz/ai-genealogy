@@ -2,10 +2,10 @@
 import logging
 from typing import List
 
-from .base import ChunkingStrategy
+from ..chunking.handlers import CHUNK_HANDLERS
 from ..chunking.models import ChunkType, TextChunk
 from ..chunking.parser import parse_grounding_tokens
-from ..chunking.handlers import CHUNK_HANDLERS
+from .base import ChunkingStrategy
 
 logger = logging.getLogger(__name__)
 

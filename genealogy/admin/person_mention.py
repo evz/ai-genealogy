@@ -4,7 +4,8 @@ from django.contrib import admin, messages
 from django.urls import reverse
 from django.utils.html import format_html
 
-from ..models import Identity, PersonMention, RelationshipMention, MentionToIdentity
+from ..models import (Identity, MentionToIdentity, PersonMention,
+                      RelationshipMention)
 from .merge_logic import merge_mentions
 
 logger = logging.getLogger(__name__)
@@ -116,8 +117,9 @@ class PersonMentionAdmin(admin.ModelAdmin):
 
         # Then handle side effects if extraction error was set
         if obj.is_extraction_error:
-            from ..models import PotentialDuplicate
             from django.utils import timezone
+
+            from ..models import PotentialDuplicate
 
             # Mark all PotentialDuplicate pairs involving this mention as REJECTED
             count1 = PotentialDuplicate.objects.filter(

@@ -1,15 +1,15 @@
 # Import all admin modules to register them with Django admin
+from .book_section import BookSectionAdmin
 from .document import DocumentAdmin
 from .document_page import DocumentPageAdmin
-from .book_section import BookSectionAdmin
-from .person_mention import PersonMentionAdmin
-from .identity import IdentityAdmin
-from .place import PlaceAdmin
-from .partnership import PartnershipMentionAdmin
+from .duplicate_clusters import MatchReasonFilter, PotentialDuplicateAdmin
 from .event import EventAdmin
+from .identity import IdentityAdmin
+from .partnership import PartnershipMentionAdmin
+from .person_mention import PersonMentionAdmin
+from .place import PlaceAdmin
 from .relationship import RelationshipMentionAdmin
 from .textchunk import TextChunkAdmin
-from .duplicate_clusters import PotentialDuplicateAdmin, MatchReasonFilter
 
 __all__ = [
     'DocumentAdmin',
