@@ -1,10 +1,11 @@
 """Chunking strategy for descendant genealogy sections"""
 import logging
+from collections import Counter
 from typing import List
 
 from ..chunking.handlers import CHUNK_HANDLERS
 from ..chunking.models import ChunkType, TextChunk
-from ..chunking.parser import parse_grounding_tokens
+from ..chunking.parser import detect_chunk_type, parse_grounding_tokens
 from .base import ChunkingStrategy
 
 logger = logging.getLogger(__name__)
@@ -98,8 +99,6 @@ class DescendantGenealogyChunkingStrategy(ChunkingStrategy):
 
     def _extract_out_of_flow_content(self, tokens):
         """Extract images and info boxes from token stream"""
-        from collections import Counter
-
         images = []
         inverted_text_tokens = []
         main_flow_tokens = []
@@ -174,8 +173,6 @@ class DescendantGenealogyChunkingStrategy(ChunkingStrategy):
 
     def _chunk_main_flow(self, tokens, document):
         """Chunk main flow tokens using handler pattern"""
-        from ..chunking.parser import detect_chunk_type
-
         chunks = []
         i = 0
 

@@ -1,11 +1,13 @@
 import tempfile
 from unittest.mock import patch
 
+from django.contrib.admin.sites import AdminSite
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
+from genealogy.admin import DocumentPageAdmin
 from genealogy.models import Document, DocumentPage
 
 
@@ -229,10 +231,6 @@ class AdminBatchUploadTests(TestCase):
         )
 
         # Simulate admin action on document pages
-        from django.contrib.admin.sites import AdminSite
-
-        from genealogy.admin import DocumentPageAdmin
-
         admin = DocumentPageAdmin(DocumentPage, AdminSite())
         request = self.client.request().wsgi_request
         queryset = DocumentPage.objects.filter(id__in=[page1.id, page2.id])
@@ -261,10 +259,6 @@ class AdminBatchUploadTests(TestCase):
         )
 
         # Simulate admin reprocess action
-        from django.contrib.admin.sites import AdminSite
-
-        from genealogy.admin import DocumentPageAdmin
-
         admin = DocumentPageAdmin(DocumentPage, AdminSite())
         request = self.client.request().wsgi_request
         queryset = DocumentPage.objects.filter(id=page.id)

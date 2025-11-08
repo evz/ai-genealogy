@@ -5,6 +5,8 @@ from typing import List, Tuple
 
 from django.db import models, transaction
 
+from genealogy.models import PersonMention as PersonMentionModel
+from genealogy.models import TextChunk as TextChunkModel
 from genealogy.utils import parse_name
 
 from .models import ChunkType, GroundingToken, TextChunk
@@ -77,8 +79,6 @@ def save_chunks_to_db(
     Returns:
         List of saved TextChunk database model instances
     """
-    from ..models import TextChunk as TextChunkModel
-
     # Calculate starting sequence number if not provided
     if start_sequence is None:
         max_seq = TextChunkModel.objects.filter(document=document).aggregate(
@@ -174,8 +174,6 @@ def save_chunks_to_db(
         # ONLY create if we have a valid genealogical_identifier (genealogical_id is NOT NULL in DB)
         primary_person_mention = None
         if chunk.chunk_type == ChunkType.INDIVIDUAL_ENTRY and chunk.subject and genealogical_identifier:
-            from ..models import PersonMention as PersonMentionModel
-
             # Parse name into given_names and surname
             given_names, surname = parse_name(chunk.subject)
 

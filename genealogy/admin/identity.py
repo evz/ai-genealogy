@@ -5,7 +5,8 @@ from django.shortcuts import redirect
 from django.urls import path, reverse
 from django.utils.html import format_html
 
-from ..models import Identity, MentionToIdentity, MergeEvent
+from ..models import (Event, Identity, MentionToIdentity, MergeEvent,
+                      PartnershipMention, RelationshipMention, TextChunk)
 from .merge_logic import unmerge_mentions
 
 logger = logging.getLogger(__name__)
@@ -158,7 +159,6 @@ class IdentityAdmin(admin.ModelAdmin):
         mention_ids = obj.mention_mappings.values_list('mention_id', flat=True)
 
         # Get all events from those mentions
-        from ..models import Event
         events = Event.objects.filter(mention_id__in=mention_ids).select_related('mention', 'place').order_by('date')
 
         if not events:
@@ -201,7 +201,6 @@ class IdentityAdmin(admin.ModelAdmin):
         mention_ids = list(obj.mention_mappings.values_list('mention_id', flat=True))
 
         # Get relationships
-        from ..models import RelationshipMention
         parent_rels = RelationshipMention.objects.filter(
             child_mention_id__in=mention_ids
         ).select_related('parent_mention')
@@ -266,7 +265,6 @@ class IdentityAdmin(admin.ModelAdmin):
         mention_ids = list(obj.mention_mappings.values_list('mention_id', flat=True))
 
         # Get partnerships involving any of these mentions
-        from ..models import PartnershipMention
         partnerships = PartnershipMention.objects.filter(
             partners__id__in=mention_ids
         ).distinct().prefetch_related('partners')
@@ -363,7 +361,6 @@ class IdentityAdmin(admin.ModelAdmin):
         mention_ids = list(obj.mention_mappings.values_list('mention_id', flat=True))
 
         # Get all source chunks from those mentions
-        from ..models import TextChunk
         chunks = TextChunk.objects.filter(
             person_mentions__id__in=mention_ids
         ).select_related('document').order_by(

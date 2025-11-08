@@ -496,8 +496,6 @@ class Command(BaseCommand):
         if not date_str:
             return None, False
 
-        import re
-
         # Check for uncertainty indicators
         is_estimated = False
         date_str = date_str.strip()

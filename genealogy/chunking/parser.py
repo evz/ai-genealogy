@@ -68,9 +68,8 @@ def parse_grounding_tokens(ocr_text: str) -> List[GroundingToken]:
         # Parse bounding box
         try:
             coords = [int(x.strip()) for x in bbox_str.split(',')]
-        except ValueError:
-            import pdb
-            pdb.set_trace()
+        except ValueError as e:
+            raise ValueError(f"Failed to parse bounding box '{bbox_str}': {e}")
         bbox = BoundingBox(x1=coords[0], y1=coords[1], x2=coords[2], y2=coords[3])
 
         # Check if inverted tag was captured

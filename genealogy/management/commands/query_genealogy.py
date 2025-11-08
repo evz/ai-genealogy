@@ -2,6 +2,7 @@
 Management command to test hybrid RAG+RRF retrieval and answer genealogical questions.
 """
 
+import json
 import logging
 
 from django.core.management.base import BaseCommand
@@ -224,7 +225,6 @@ JSON (in {'Dutch' if language == 'nl' else 'English'}):"""
 
         # Parse and format the JSON response
         try:
-            import json
             data = json.loads(response)
 
             # Format the answer from JSON

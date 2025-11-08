@@ -10,6 +10,7 @@ import kornia
 import numpy as np
 import pytesseract
 import torch
+from doclayout_yolo import YOLOv10
 from pdf2image import convert_from_path
 from PIL import Image, ImageDraw, ImageFont
 from shapely.geometry import box as shapely_box
@@ -445,8 +446,6 @@ def process_page_with_overlap_resolution(page_num, file_path):
 
         # Step 2: Run DocStructBench detection
         print("2. Running DocStructBench 1280 detection...")
-        from doclayout_yolo import YOLOv10
-
         model_path = "/app/models/doclayout_yolo_docstructbench_imgsz1280_2501.pt"
         model = YOLOv10(model_path)
 

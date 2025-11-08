@@ -11,6 +11,7 @@ import logging
 import re
 from typing import Dict, List, Optional
 
+from abydos.phonetic import DaitchMokotoff
 from django.db import connection
 
 from .ollama_utils import OllamaClient
@@ -94,7 +95,6 @@ class HybridRetriever:
         # Generate DM codes for names
         dm_codes = []
         if names:
-            from abydos.phonetic import DaitchMokotoff
             dm = DaitchMokotoff()
             for name in names:
                 try:

@@ -2,6 +2,7 @@
 Custom field types and utilities for the genealogy app
 """
 
+from django import forms
 from django.contrib.postgres.fields import ArrayField
 from django.core.exceptions import ValidationError
 
@@ -49,8 +50,6 @@ class CommaSeparatedArrayField(ArrayField):
 
     def formfield(self, **kwargs):
         """Return the form field for admin interface"""
-        from django import forms
-
         # Create a custom form field that handles the conversion
         class CommaSeparatedFormField(forms.CharField):
             def prepare_value(self, value):

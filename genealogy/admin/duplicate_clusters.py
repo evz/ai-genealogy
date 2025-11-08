@@ -4,6 +4,7 @@ from uuid import UUID
 
 from django.contrib import admin, messages
 from django.db import transaction
+from django.db.models import Count, Q
 from django.shortcuts import redirect, render
 from django.urls import path, reverse
 from django.utils import timezone
@@ -45,7 +46,6 @@ class MatchReasonFilter(admin.SimpleListFilter):
             search_terms = reason_map[self.value()]
             if isinstance(search_terms, list):
                 # Match any of the terms
-                from django.db.models import Q
                 q = Q()
                 for term in search_terms:
                     q |= Q(match_reasons__contains=[term])
@@ -241,7 +241,6 @@ class PotentialDuplicateAdmin(admin.ModelAdmin):
         cluster = clusters[cluster_id]
 
         # Get Person objects for all members
-        from django.db.models import Count
         persons = PersonMention.objects.filter(id__in=cluster['person_ids']).prefetch_related(
             'events',
             'events__place',

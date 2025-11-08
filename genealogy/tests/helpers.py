@@ -1,5 +1,6 @@
 """Test helper functions and fixtures for genealogy tests"""
 
+import os
 from typing import Any, Dict, List, Optional
 
 from genealogy.chunking.models import BoundingBox, GroundingToken
@@ -182,8 +183,6 @@ def load_fixture(fixture_name: str) -> str:
     Returns:
         File contents as string
     """
-    import os
-
     fixtures_dir = os.path.join(
         os.path.dirname(__file__),
         'fixtures'

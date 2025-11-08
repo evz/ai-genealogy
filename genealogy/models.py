@@ -3,6 +3,7 @@ import uuid
 from django.contrib.postgres.fields import ArrayField
 from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVectorField
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 from pgvector.django import IvfflatIndex, VectorField
@@ -172,8 +173,6 @@ class BookSection(models.Model):
 
     def clean(self):
         """Validate that start_page <= end_page and no overlap with other sections"""
-        from django.core.exceptions import ValidationError
-
         if self.start_page > self.end_page:
             raise ValidationError("start_page must be <= end_page")
 

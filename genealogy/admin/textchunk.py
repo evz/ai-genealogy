@@ -1,4 +1,5 @@
 import logging
+from collections import defaultdict
 
 from django.contrib import admin, messages
 from django.urls import reverse
@@ -251,7 +252,6 @@ class TextChunkAdmin(admin.ModelAdmin):
         html.append(f'<div style="margin-bottom: 10px;"><strong>Total: {events.count()} events</strong></div>')
 
         # Group by person
-        from collections import defaultdict
         events_by_person = defaultdict(list)
         for event in events:
             events_by_person[event.mention].append(event)

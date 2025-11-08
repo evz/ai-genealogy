@@ -1,11 +1,13 @@
 import logging
 
 from django.contrib import admin, messages
+from django.contrib import messages as django_messages
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import format_html
 
 from ..models import (Identity, MentionToIdentity, PersonMention,
-                      RelationshipMention)
+                      PotentialDuplicate, RelationshipMention)
 from .merge_logic import merge_mentions
 
 logger = logging.getLogger(__name__)
@@ -117,10 +119,6 @@ class PersonMentionAdmin(admin.ModelAdmin):
 
         # Then handle side effects if extraction error was set
         if obj.is_extraction_error:
-            from django.utils import timezone
-
-            from ..models import PotentialDuplicate
-
             # Mark all PotentialDuplicate pairs involving this mention as REJECTED
             count1 = PotentialDuplicate.objects.filter(
                 mention1=obj,
@@ -140,9 +138,8 @@ class PersonMentionAdmin(admin.ModelAdmin):
                 reviewed_at=timezone.now()
             )
 
-            from django.contrib import messages
             if count1 + count2 > 0:
-                messages.info(request, f"Marked {count1 + count2} potential duplicate pairs as REJECTED for this extraction error.")
+                django_messages.info(request, f"Marked {count1 + count2} potential duplicate pairs as REJECTED for this extraction error.")
 
     def identity_link(self, obj):
         """Show which Identity this mention maps to"""
