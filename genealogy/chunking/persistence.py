@@ -1,7 +1,7 @@
 """Database persistence for text chunks"""
 
 import logging
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from django.db import models, transaction
 
@@ -232,3 +232,77 @@ def save_chunks_to_db(
             primary_person_mention.source_chunks.add(db_chunk)
 
     return saved_chunks
+
+
+def save_chunk_enrichment(
+    chunk: TextChunkModel,
+    embedding: Optional[List[float]] = None,
+    dm_codes: Optional[List[str]] = None,
+) -> Dict[str, bool]:
+    """
+    Save enrichment data (embeddings and/or DM codes) to a chunk.
+
+    Args:
+        chunk: TextChunk model instance to update
+        embedding: Vector embedding to save (or None to skip)
+        dm_codes: List of DM codes to save (or None to skip)
+
+    Returns:
+        dict with:
+            - embedding_saved: bool
+            - dm_codes_saved: bool
+    """
+    result = {
+        "embedding_saved": False,
+        "dm_codes_saved": False,
+    }
+
+    update_fields = []
+
+    if embedding is not None:
+        chunk.embedding = embedding
+        update_fields.append("embedding")
+        result["embedding_saved"] = True
+
+    if dm_codes is not None:
+        chunk.dm_codes = dm_codes
+        update_fields.append("dm_codes")
+        result["dm_codes_saved"] = True
+
+    if update_fields:
+        chunk.save(update_fields=update_fields)
+
+    return result
+
+
+@transaction.atomic
+def save_chunk_enrichments_batch(
+    chunks_with_enrichments: List[Tuple[TextChunkModel, Optional[List[float]], Optional[List[str]]]]
+) -> Dict[str, int]:
+    """
+    Save enrichments for multiple chunks in a transaction.
+
+    Args:
+        chunks_with_enrichments: List of tuples (chunk, embedding, dm_codes)
+
+    Returns:
+        dict with:
+            - embeddings_saved: int
+            - dm_codes_saved: int
+            - total_chunks: int
+    """
+    embeddings_saved = 0
+    dm_codes_saved = 0
+
+    for chunk, embedding, dm_codes in chunks_with_enrichments:
+        result = save_chunk_enrichment(chunk, embedding, dm_codes)
+        if result["embedding_saved"]:
+            embeddings_saved += 1
+        if result["dm_codes_saved"]:
+            dm_codes_saved += 1
+
+    return {
+        "embeddings_saved": embeddings_saved,
+        "dm_codes_saved": dm_codes_saved,
+        "total_chunks": len(chunks_with_enrichments),
+    }

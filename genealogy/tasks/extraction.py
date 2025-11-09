@@ -11,7 +11,7 @@ from django.db.models import Q
 from ..extraction_strategies import get_strategy
 from ..models import Document
 from ..ollama_utils import OllamaClient, get_default_models
-from ..services import ExtractionService
+from ..services import ChunkEnrichmentService, ExtractionService
 
 logger = logging.getLogger(__name__)
 
@@ -55,11 +55,17 @@ def extract_entities_from_chunks(self, document_id: str):  # noqa: ARG001
         model = document.llm_model_used or get_default_models()["llm_model"]
         logger.info(f"Using model: {model}")
 
-        # Initialize extraction service
+        # Initialize extraction and enrichment services
         extraction_service = ExtractionService(ollama)
+        enrichment_service = ChunkEnrichmentService(ollama)
+
+        # Get embedding model from defaults
+        embedding_model = get_default_models()["embedding_model"]
+        logger.info(f"Using embedding model: {embedding_model}")
 
         total_chunks_processed = 0
         total_chunks_failed = 0
+        total_enrichments_completed = 0
         sections_processed = {}
 
         # Process each section with its appropriate strategy
@@ -110,6 +116,36 @@ def extract_entities_from_chunks(self, document_id: str):  # noqa: ARG001
             total_chunks_processed += section_processed
             total_chunks_failed += section_failed
 
+            # Enrich successfully extracted chunks with embeddings and DM codes
+            if section_processed > 0:
+                logger.info(f"Enriching {section_processed} extracted chunks in section '{section.title}'")
+
+                # Get chunks that were just successfully extracted
+                extracted_chunks = document.text_chunks.filter(
+                    start_page__gte=section.start_page,
+                    start_page__lte=section.end_page,
+                    entities_extracted=True,
+                    **strategy.get_chunk_filter()
+                ).order_by("sequence_number")
+
+                # Enrich with embeddings and DM codes
+                enrichment_result = enrichment_service.enrich_chunks_batch(
+                    chunks=extracted_chunks,
+                    embedding_model=embedding_model,
+                    generate_embedding=True,
+                    generate_dm_codes=True,
+                    force=False,  # Skip chunks that already have enrichments
+                )
+
+                total_enrichments_completed += enrichment_result['processed']
+
+                logger.info(
+                    f"Enrichment complete for section '{section.title}': "
+                    f"{enrichment_result['embeddings_generated']} embeddings, "
+                    f"{enrichment_result['dm_codes_generated']} DM code sets generated "
+                    f"({enrichment_result['total_dm_codes']} total codes)"
+                )
+
             sections_processed[section.title] = {
                 'strategy': strategy.strategy_name,
                 'processed': section_processed,
@@ -128,15 +164,17 @@ def extract_entities_from_chunks(self, document_id: str):  # noqa: ARG001
 
         logger.info(
             f"Extraction complete for document {document}: "
-            f"{total_chunks_processed} processed, {total_chunks_failed} failed across {len(sections_processed)} sections"
+            f"{total_chunks_processed} processed, {total_chunks_failed} failed, "
+            f"{total_enrichments_completed} enriched across {len(sections_processed)} sections"
         )
 
         return {
             "success": True,
-            "message": f"Processed {total_chunks_processed} chunks ({total_chunks_failed} failed)",
+            "message": f"Processed {total_chunks_processed} chunks ({total_chunks_failed} failed), enriched {total_enrichments_completed}",
             "document_id": str(document_id),
             "chunks_processed": total_chunks_processed,
             "chunks_failed": total_chunks_failed,
+            "chunks_enriched": total_enrichments_completed,
             "sections_processed": sections_processed,
         }
 

@@ -7,6 +7,7 @@ Hybrid RAG+RRF retrieval system combining:
 Uses Reciprocal Rank Fusion to combine results from all three approaches.
 """
 
+import json
 import logging
 import re
 from typing import Dict, List, Optional
@@ -35,6 +36,7 @@ class HybridRetriever:
         vec_limit: int = 25,
         trigram_limit: int = 20,
         phonetic_limit: int = 40,
+        subject_limit: int = 15,
         expand_window: int = 2,
     ) -> List[Dict]:
         """
@@ -54,6 +56,9 @@ class HybridRetriever:
         # 1. Prepare query features
         query_features = self._extract_query_features(query)
 
+        # 1.5. Extract potential person names from query for pre-filtering
+        person_filter = self._extract_person_names_from_query(query)
+
         # 2. Run hybrid search
         results = self._hybrid_search(
             query_text=query_features["text"],
@@ -63,7 +68,13 @@ class HybridRetriever:
             vec_limit=vec_limit,
             trigram_limit=trigram_limit,
             phonetic_limit=phonetic_limit,
+            subject_limit=subject_limit,
+            person_filter=person_filter,
         )
+
+        # 2.5. Post-boost chunks where subject matches query names
+        if person_filter:
+            results = self._boost_subject_matches(results, person_filter)
 
         # 3. Expand results to include neighboring chunks
         if expand_window > 0:
@@ -119,6 +130,30 @@ class HybridRetriever:
             "dm_codes": dm_codes,
         }
 
+    def _extract_person_names_from_query(self, query: str) -> Optional[List[str]]:
+        """
+        Extract potential person names from the query for pre-filtering.
+
+        Looks for capitalized names and common Dutch/genealogical surname patterns.
+        """
+        # Pattern: Capitalized words that might be names
+        # Common pattern: "FirstName van/de/der Surname"
+        names = []
+
+        # Extract capitalized words (potential names)
+        words = re.findall(r'\b[A-ZÀ-Ý][a-zA-ZÀ-ÿ]+\b', query)
+
+        # Filter out common English/Dutch question words
+        stop_words = {'Tell', 'Who', 'What', 'Where', 'When', 'How', 'Was', 'Were', 'About', 'The'}
+        names = [w for w in words if w not in stop_words]
+
+        # If we found names, return them
+        if names:
+            logger.info(f"Extracted potential person names from query: {names}")
+            return names
+
+        return None
+
     def _hybrid_search(
         self,
         query_text: str,
@@ -128,6 +163,8 @@ class HybridRetriever:
         vec_limit: int,
         trigram_limit: int,
         phonetic_limit: int,
+        subject_limit: int,
+        person_filter: Optional[List[str]] = None,
     ) -> List[Dict]:
         """
         Execute hybrid search using PostgreSQL CTE with RRF fusion.
@@ -147,7 +184,20 @@ class HybridRetriever:
         # Escape single quotes in query text
         safe_query = query_text.replace("'", "''")
 
-        # SQL query with three-leg hybrid search + RRF fusion
+        # Build person filter WHERE clause if names detected
+        person_filter_clause = ""
+        if person_filter:
+            # Create ILIKE conditions for subject or extracted_people
+            # Use AND to require ALL names be present (not just any one)
+            name_conditions = []
+            for name in person_filter:
+                safe_name = name.replace("'", "''")
+                # Match in subject field OR check if any array element contains the name
+                name_conditions.append(f"(subject ILIKE '%{safe_name}%' OR EXISTS (SELECT 1 FROM unnest(extracted_people) AS person WHERE person ILIKE '%{safe_name}%'))")
+            person_filter_clause = " AND (" + " AND ".join(name_conditions) + ")"
+            logger.info(f"Applying person filter: {person_filter}")
+
+        # SQL query with four-leg hybrid search + RRF fusion
         sql = f"""
         WITH
         params AS (
@@ -161,7 +211,7 @@ class HybridRetriever:
             SELECT id,
                    row_number() OVER (ORDER BY embedding <=> q_vec) AS vec_rank
             FROM   genealogy_textchunk, params
-            WHERE  embedding IS NOT NULL
+            WHERE  embedding IS NOT NULL{person_filter_clause}
             ORDER  BY embedding <=> q_vec
             LIMIT  {vec_limit}
         ),
@@ -170,7 +220,7 @@ class HybridRetriever:
             SELECT id,
                    row_number() OVER (ORDER BY similarity(text_content, q_text) DESC) AS tg_rank
             FROM   genealogy_textchunk, params
-            WHERE  text_content % q_text
+            WHERE  text_content % q_text{person_filter_clause}
             LIMIT  {trigram_limit}
         ),
 
@@ -178,8 +228,18 @@ class HybridRetriever:
             SELECT id,
                    row_number() OVER () AS ph_rank
             FROM   genealogy_textchunk, params
-            WHERE  dm_codes::text[] && q_dm
+            WHERE  dm_codes::text[] && q_dm{person_filter_clause}
             LIMIT  {phonetic_limit}
+        ),
+
+        subj AS (
+            SELECT id,
+                   row_number() OVER (ORDER BY similarity(subject, q_text) DESC) AS subj_rank
+            FROM   genealogy_textchunk, params
+            WHERE  subject IS NOT NULL
+                   AND subject != ''
+                   AND subject % q_text{person_filter_clause}
+            LIMIT  {subject_limit}
         ),
 
         rrf AS (
@@ -188,6 +248,8 @@ class HybridRetriever:
             SELECT id, 1.0/(60+tg_rank)  AS score FROM trgm
             UNION ALL
             SELECT id, 1.0/(80+ph_rank)  AS score FROM phon
+            UNION ALL
+            SELECT id, 1.0/(10+subj_rank) AS score FROM subj
         )
 
         SELECT
@@ -198,18 +260,21 @@ class HybridRetriever:
             c.start_page,
             c.end_page,
             c.chunk_type,
-            c.genealogy_ids,
-            c.person_names,
-            c.dates,
-            c.places,
-            c.addresses,
-            c.occupations,
+            c.genealogical_identifier,
+            c.subject,
+            c.generation_number,
+            c.generation_header,
+            c.family_groups,
+            c.extracted_people,
+            c.extracted_events,
+            c.extracted_relationships,
             SUM(rrf.score) AS rrf_score
         FROM   rrf
         JOIN   genealogy_textchunk c ON c.id = rrf.id
         GROUP  BY c.id, c.text_content, c.document_id, c.sequence_number,
-                  c.start_page, c.end_page, c.chunk_type, c.genealogy_ids,
-                  c.person_names, c.dates, c.places, c.addresses, c.occupations
+                  c.start_page, c.end_page, c.chunk_type, c.genealogical_identifier,
+                  c.subject, c.generation_number, c.generation_header, c.family_groups,
+                  c.extracted_people, c.extracted_events, c.extracted_relationships
         ORDER  BY rrf_score DESC
         LIMIT  {top_k};
         """
@@ -220,9 +285,34 @@ class HybridRetriever:
             results = []
             for row in cursor.fetchall():
                 result = dict(zip(columns, row))
+                # Parse JSONB fields that come back as strings from raw SQL
+                result = self._parse_jsonb_fields(result)
                 results.append(result)
 
         logger.info(f"Hybrid search returned {len(results)} results for query: {query_text[:50]}...")
+        return results
+
+    def _boost_subject_matches(self, results: List[Dict], person_filter: List[str]) -> List[Dict]:
+        """
+        Post-process results to boost chunks where subject exactly matches query names.
+
+        This helps surface the actual person's entry when their name appears in many chunks.
+        """
+        for result in results:
+            subject = result.get("subject", "")
+            if subject:
+                # Check if any filter name appears in the subject
+                for name in person_filter:
+                    if name.lower() in subject.lower():
+                        # Boost the RRF score significantly
+                        original_score = result.get("rrf_score", 0.0)
+                        result["rrf_score"] = float(original_score) * 2.0  # Double the score
+                        logger.debug(f"Boosted {result.get('genealogical_identifier')} (subject: {subject}) from {original_score:.4f} to {result['rrf_score']:.4f}")
+                        break
+
+        # Re-sort by the new scores
+        results.sort(key=lambda x: float(x.get("rrf_score", 0.0)), reverse=True)
+
         return results
 
     def _expand_results(self, results: List[Dict], window: int = 2) -> List[Dict]:
@@ -255,12 +345,14 @@ class HybridRetriever:
                 start_page,
                 end_page,
                 chunk_type,
-                genealogy_ids,
-                person_names,
-                dates,
-                places,
-                addresses,
-                occupations
+                genealogical_identifier,
+                subject,
+                generation_number,
+                generation_header,
+                family_groups,
+                extracted_people,
+                extracted_events,
+                extracted_relationships
             FROM genealogy_textchunk
             WHERE document_id = %s
               AND sequence_number BETWEEN %s AND %s
@@ -272,6 +364,8 @@ class HybridRetriever:
                 columns = [col[0] for col in cursor.description]
                 for row in cursor.fetchall():
                     chunk_dict = dict(zip(columns, row))
+                    # Parse JSONB fields that come back as strings from raw SQL
+                    chunk_dict = self._parse_jsonb_fields(chunk_dict)
                     chunk_id = chunk_dict["id"]
 
                     # Only add if we haven't seen this chunk yet
@@ -288,13 +382,33 @@ class HybridRetriever:
         logger.info(f"Expanded {len(results)} results to {len(expanded)} chunks (window={window})")
         return expanded
 
-    def build_context(self, chunks: List[Dict], include_anchors: bool = True) -> str:
+    def _parse_jsonb_fields(self, chunk_dict: Dict) -> Dict:
+        """
+        Parse JSONB fields that come back as strings from raw SQL queries.
+
+        The Django ORM handles this automatically, but raw SQL returns JSONB as strings.
+        """
+        jsonb_fields = ['family_groups', 'extracted_people', 'extracted_events', 'extracted_relationships']
+
+        for field in jsonb_fields:
+            if field in chunk_dict and isinstance(chunk_dict[field], str):
+                try:
+                    chunk_dict[field] = json.loads(chunk_dict[field])
+                except (json.JSONDecodeError, TypeError):
+                    # If parsing fails, keep as-is or set to empty list
+                    logger.warning(f"Failed to parse JSONB field '{field}' for chunk")
+                    chunk_dict[field] = []
+
+        return chunk_dict
+
+    def build_context(self, chunks: List[Dict], include_anchors: bool = True, include_enrichment: bool = False) -> str:
         """
         Build formatted context string from retrieved chunks for LLM prompt.
 
         Args:
             chunks: Retrieved chunk dictionaries
             include_anchors: Whether to include anchor metadata in context
+            include_enrichment: Whether to include extracted people, events, relationships
 
         Returns:
             Formatted context string
@@ -310,26 +424,87 @@ class HybridRetriever:
                 anchor_parts.append(f"ENTRY {i}")
 
                 # Genealogical ID if available
-                if chunk.get("genealogy_ids"):
-                    anchor_parts.append(f"[{chunk['genealogy_ids'][0]}]")
+                genealogical_id = chunk.get("genealogical_identifier")
+                if genealogical_id:
+                    anchor_parts.append(f"[{genealogical_id}]")
 
                 # Page number
                 anchor_parts.append(f"(page {chunk['start_page']})")
 
                 # Chunk type for context
                 chunk_type = chunk.get("chunk_type", "")
-                if chunk_type == "GENEALOGY_ENTRY":
-                    anchor_parts.append("GENEALOGY")
-                elif chunk_type == "HEADER":
-                    anchor_parts.append("HEADER")
-
-                # Person names if available
-                if chunk.get("person_names"):
-                    names = chunk['person_names'][:2]  # Just first 2 names
-                    anchor_parts.append(f"Names: {', '.join(names)}")
+                if chunk_type == "individual_entry":
+                    anchor_parts.append("INDIVIDUAL_ENTRY")
+                elif chunk_type == "generation_header":
+                    anchor_parts.append("GENERATION_HEADER")
+                elif chunk_type == "family_group_header":
+                    anchor_parts.append("FAMILY_GROUP_HEADER")
 
                 anchor = " ".join(anchor_parts)
-                context_parts.append(f"--- {anchor} ---\n{chunk['text_content']}\n")
+                chunk_parts = [f"--- {anchor} ---"]
+
+                # Add subject if available
+                subject = chunk.get("subject")
+                if subject:
+                    chunk_parts.append(f"Subject: {subject}")
+
+                # Add generation info if available
+                generation_number = chunk.get("generation_number")
+                generation_header = chunk.get("generation_header")
+                if generation_number:
+                    gen_text = f"Generation: {generation_number}"
+                    if generation_header:
+                        gen_text += f" ({generation_header})"
+                    chunk_parts.append(gen_text)
+
+                # Add family group info if available
+                family_groups = chunk.get("family_groups")
+                if family_groups and len(family_groups) > 0:
+                    chunk_parts.append(f"Family: {', '.join(family_groups)}")
+
+                # Add enrichment if requested
+                if include_enrichment:
+                    # People mentioned
+                    extracted_people = chunk.get("extracted_people")
+                    if extracted_people and len(extracted_people) > 0:
+                        people_list = ', '.join(extracted_people[:5])  # First 5 names
+                        if len(extracted_people) > 5:
+                            people_list += f" (and {len(extracted_people) - 5} more)"
+                        chunk_parts.append(f"\nPEOPLE MENTIONED: {people_list}")
+
+                    # Events
+                    extracted_events = chunk.get("extracted_events")
+                    if extracted_events and len(extracted_events) > 0:
+                        chunk_parts.append("\nEVENTS:")
+                        for event in extracted_events[:10]:  # First 10 events
+                            # Skip if event is not a dict (defensive coding)
+                            if not isinstance(event, dict):
+                                continue
+                            event_parts = []
+                            if event.get("event_type"):
+                                event_parts.append(event["event_type"])
+                            if event.get("person"):
+                                event_parts.append(f"({event['person']})")
+                            if event.get("date"):
+                                event_parts.append(event["date"])
+                            if event.get("place"):
+                                event_parts.append(event["place"])
+                            if event_parts:
+                                chunk_parts.append(f"  - {': '.join(event_parts)}")
+
+                    # Relationships
+                    extracted_relationships = chunk.get("extracted_relationships")
+                    if extracted_relationships and len(extracted_relationships) > 0:
+                        chunk_parts.append("\nRELATIONSHIPS:")
+                        for rel in extracted_relationships[:10]:  # First 10 relationships
+                            person1 = rel.get("person1", "")
+                            person2 = rel.get("person2", "")
+                            rel_type = rel.get("relationship_type", "related to")
+                            if person1 and person2:
+                                chunk_parts.append(f"  - {person1} ({rel_type}) {person2}")
+
+                chunk_parts.append(f"\nCHUNK TEXT:\n{chunk['text_content']}\n")
+                context_parts.append("\n".join(chunk_parts))
             else:
                 context_parts.append(chunk["text_content"])
 

@@ -123,6 +123,40 @@ class OllamaClient:
             logger.exception(f"Error generating text: {e}")
             return None
 
+    def generate_stream(self, model: str, prompt: str, **kwargs):
+        """Generate text using specified model with streaming response"""
+        import json
+        try:
+            payload = {"model": model, "prompt": prompt, "stream": True, **kwargs}
+
+            response = requests.post(
+                f"{self.base_url}/api/generate",
+                json=payload,
+                timeout=self.timeout,
+                stream=True
+            )
+
+            if response.status_code == 200:
+                for line in response.iter_lines():
+                    if line:
+                        chunk = line.decode('utf-8')
+                        try:
+                            data = json.loads(chunk)  # Use json.loads instead of eval
+                            if 'response' in data:
+                                yield data['response']
+                            if data.get('done', False):
+                                break
+                        except Exception as e:
+                            logger.error(f"Error parsing stream chunk: {e}")
+                            continue
+            else:
+                logger.error(f"Generation failed: {response.status_code} - {response.text}")
+                return
+
+        except requests.RequestException as e:
+            logger.exception(f"Error generating text: {e}")
+            return
+
     def embed(self, model: str, input_text: str) -> list[float] | None:
         """Generate embeddings using specified model"""
         try:
@@ -144,6 +178,6 @@ class OllamaClient:
 def get_default_models() -> dict[str, str]:
     """Get default model configuration from environment"""
     return {
-        "llm_model": os.getenv("OLLAMA_LLM_MODEL", "aya:35b-23"),
+        "llm_model": os.getenv("OLLAMA_LLM_MODEL", "llama3.1:70b"),
         "embedding_model": os.getenv("OLLAMA_EMBEDDING_MODEL", "zylonai/multilingual-e5-large:latest"),
     }

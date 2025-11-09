@@ -73,12 +73,34 @@ class DocumentAdmin(admin.ModelAdmin):
         error_count = 0
 
         for doc in queryset:
-            # Check if document has chunks ready for extraction
-            if not doc.text_chunks.filter(chunk_type="GENEALOGY_ENTRY").exists():
+            # Check if document has chunks in genealogy sections ready for extraction
+            genealogy_section_types = ['DESCENDANT_GENEALOGY', 'KWARTIERSTATEN']
+            genealogy_sections = doc.book_sections.filter(section_type__in=genealogy_section_types)
+
+            if not genealogy_sections.exists():
                 error_count += 1
                 self.message_user(
                     request,
-                    f"Document {doc.title} has no GENEALOGY_ENTRY chunks. Run text chunking first.",
+                    f"Document {doc.title} has no genealogy sections (DESCENDANT_GENEALOGY or KWARTIERSTATEN). Define book sections first.",
+                    level=messages.WARNING,
+                )
+                continue
+
+            # Check if there are chunks in those sections
+            has_chunks = False
+            for section in genealogy_sections:
+                if doc.text_chunks.filter(
+                    start_page__gte=section.start_page,
+                    start_page__lte=section.end_page
+                ).exists():
+                    has_chunks = True
+                    break
+
+            if not has_chunks:
+                error_count += 1
+                self.message_user(
+                    request,
+                    f"Document {doc.title} has no chunks in genealogy sections. Run text chunking first.",
                     level=messages.WARNING,
                 )
                 continue

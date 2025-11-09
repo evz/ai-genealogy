@@ -6,8 +6,9 @@ from django.urls import reverse
 from django.utils.html import format_html
 
 from ..extraction_strategies import get_strategy
-from ..models import Event, PersonMention, RelationshipMention, TextChunk
+from ..models import BookSection, Event, PersonMention, RelationshipMention, TextChunk
 from ..ollama_utils import OllamaClient, get_default_models
+from ..services import ChunkEnrichmentService
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class TextChunkAdmin(admin.ModelAdmin):
         "formatted_people", "formatted_relationships", "formatted_events",
         "created_persons_display", "created_events_display", "created_relationships_display"
     ]
-    actions = ["reextract_entities"]
+    actions = ["reextract_entities", "enrich_chunks"]
 
     fieldsets = (
         (
@@ -363,13 +364,32 @@ class TextChunkAdmin(admin.ModelAdmin):
 
     def reextract_entities(self, request, queryset):
         """Admin action: Re-run entity extraction for selected chunks"""
-        # Only process GENEALOGY_ENTRY chunks
-        chunks = queryset.filter(chunk_type="GENEALOGY_ENTRY")
+        # Get chunks in genealogy sections (DESCENDANT_GENEALOGY, KWARTIERSTATEN)
+        genealogy_section_types = ['DESCENDANT_GENEALOGY', 'KWARTIERSTATEN']
+
+        # Get all genealogy sections
+        genealogy_sections = BookSection.objects.filter(
+            section_type__in=genealogy_section_types
+        )
+
+        # Filter chunks to those in genealogy sections
+        chunks_in_genealogy = []
+        for chunk in queryset:
+            # Find which section this chunk belongs to
+            section = chunk.document.book_sections.filter(
+                start_page__lte=chunk.start_page,
+                end_page__gte=chunk.start_page
+            ).first()
+
+            if section and section.section_type in genealogy_section_types:
+                chunks_in_genealogy.append(chunk.id)
+
+        chunks = queryset.filter(id__in=chunks_in_genealogy)
 
         if not chunks.exists():
             self.message_user(
                 request,
-                "No GENEALOGY_ENTRY chunks selected. Only genealogy entries can be extracted.",
+                "No chunks in genealogy sections selected. Only chunks from DESCENDANT_GENEALOGY or KWARTIERSTATEN sections can be extracted.",
                 level=messages.WARNING
             )
             return
@@ -442,3 +462,52 @@ class TextChunkAdmin(admin.ModelAdmin):
             )
 
     reextract_entities.short_description = "Re-extract entities from selected chunks"
+
+    @admin.action(description="Generate embeddings and DM codes for selected chunks")
+    def enrich_chunks(self, request, queryset):
+        """Admin action: Generate embeddings and DM codes for selected chunks"""
+        # Initialize Ollama client
+        ollama = OllamaClient(timeout=600)
+        if not ollama.is_available():
+            self.message_user(
+                request,
+                "Ollama server is not available. Cannot generate enrichments.",
+                level=messages.ERROR
+            )
+            return
+
+        # Initialize enrichment service
+        enrichment_service = ChunkEnrichmentService(ollama)
+
+        # Get embedding model
+        embedding_model = get_default_models()["embedding_model"]
+
+        # Enrich all selected chunks
+        result = enrichment_service.enrich_chunks_batch(
+            chunks=queryset,
+            embedding_model=embedding_model,
+            generate_embedding=True,
+            generate_dm_codes=True,
+            force=True  # Force regeneration even if already exists
+        )
+
+        # Show summary message
+        if result['processed'] > 0:
+            msg_parts = [f"Successfully enriched {result['processed']} chunk(s):"]
+            if result['embeddings_generated'] > 0:
+                msg_parts.append(f"{result['embeddings_generated']} embeddings")
+            if result['dm_codes_generated'] > 0:
+                msg_parts.append(f"{result['dm_codes_generated']} DM code sets ({result['total_dm_codes']} total codes)")
+
+            self.message_user(
+                request,
+                " ".join(msg_parts),
+                level=messages.SUCCESS
+            )
+
+        if result['failed'] > 0:
+            self.message_user(
+                request,
+                f"Failed to enrich {result['failed']} chunk(s). Check logs for details.",
+                level=messages.ERROR
+            )
