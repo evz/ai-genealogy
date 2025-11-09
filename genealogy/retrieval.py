@@ -53,6 +53,10 @@ class HybridRetriever:
         Returns:
             List of dicts with chunk data, anchor info, and RRF scores
         """
+        # Handle empty query
+        if not query or not query.strip():
+            return []
+
         # 1. Prepare query features
         query_features = self._extract_query_features(query)
 
