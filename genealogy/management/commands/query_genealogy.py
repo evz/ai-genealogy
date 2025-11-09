@@ -6,7 +6,6 @@ import logging
 
 from django.core.management.base import BaseCommand
 
-from genealogy.ollama_utils import OllamaClient
 from genealogy.retrieval import HybridRetriever
 from genealogy.services.agent_executor import AgentExecutor
 
@@ -173,7 +172,7 @@ class Command(BaseCommand):
         else:
             # Generate answer using LLM
             self.stdout.write(f"\n💬 Generating answer using {model}...\n")
-            answer = self._generate_answer(question, context, model, language)
+            answer = self._generate_answer(question, context, model, language, retriever)
 
         # Display answer
         self.stdout.write("\nANSWER:")
@@ -196,7 +195,7 @@ class Command(BaseCommand):
             self.stdout.write(f"🌍 Detected language: {'Dutch' if detected == 'nl' else 'English'}")
         return detected
 
-    def _generate_answer(self, question: str, context: str, model: str, language: str) -> str:
+    def _generate_answer(self, question: str, context: str, model: str, language: str, retriever: HybridRetriever) -> str:
         """Generate answer using LLM"""
         # Language-specific instructions
         if language == 'nl':
@@ -253,8 +252,7 @@ ANSWER FORMAT:
 
 ANSWER:"""
 
-        ollama = OllamaClient(timeout=120)
-        response = ollama.generate(
+        response = retriever.ollama.generate(
             model=model,
             prompt=prompt,
             options={
