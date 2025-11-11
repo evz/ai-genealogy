@@ -2,6 +2,7 @@ import logging
 
 from django.contrib import admin, messages
 from django.contrib import messages as django_messages
+from django.db import models
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
@@ -22,12 +23,13 @@ class PersonMentionAdmin(admin.ModelAdmin):
     use the Identity admin and merge interface.
     """
 
+    change_list_template = 'admin/genealogy/personmention/change_list.html'
+
     list_display = [
+        "identity_group_header",
         "full_name",
         "generation",
-        "gender",
         "identity_link",
-        "source_docs_count",
     ]
     list_filter = ["gender", "generation"]
     search_fields = ["given_names", "surname", "maiden_name", "genealogical_id"]
@@ -104,6 +106,18 @@ class PersonMentionAdmin(admin.ModelAdmin):
         ),
     )
 
+    def get_queryset(self, request):
+        """Order by identity for grouping, exclude deleted identities"""
+        qs = super().get_queryset(request)
+        # Order by identity (with nulls last) then by full name
+        # Only show mentions that either have no identity or have a non-deleted identity
+        return qs.select_related('mentiontoidentity__identity').filter(
+            models.Q(mentiontoidentity__isnull=True) |
+            models.Q(mentiontoidentity__identity__is_deleted=False)
+        ).extra(
+            select={'identity_id_or_null': 'COALESCE(genealogy_mentiontoidentity.identity_id, \'ffffffff-ffff-ffff-ffff-ffffffffffff\')'}
+        ).order_by('identity_id_or_null', 'surname', 'given_names')
+
     def has_add_permission(self, request):
         """Mentions are created by extraction commands, not manually"""
         return False
@@ -159,6 +173,24 @@ class PersonMentionAdmin(admin.ModelAdmin):
             return "—"
 
     identity_link.short_description = 'Mapped to Identity'
+
+    def identity_group_header(self, obj):
+        """Show identity name for visual grouping"""
+        try:
+            mapping = obj.mentiontoidentity
+            identity = mapping.identity
+            # Show short UUID + display name
+            uuid_short = str(identity.id)[:8]
+            return format_html(
+                '<strong style="color: #0066cc;">[{}] {}</strong>',
+                uuid_short,
+                identity.display_name
+            )
+        except:
+            return format_html('<em style="color: #999;">No Identity</em>')
+
+    identity_group_header.short_description = 'Identity Group'
+    identity_group_header.admin_order_field = 'mentiontoidentity__identity__display_name'
 
     def source_docs_count(self, obj):
         """Show count of source documents"""

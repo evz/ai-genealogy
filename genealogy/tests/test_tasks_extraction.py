@@ -165,7 +165,10 @@ class ExtractionTaskTests(TestCase):
     @patch("genealogy.tasks.extraction.get_default_models")
     def test_uses_default_model_if_not_configured(self, mock_get_defaults, MockService, MockOllama):
         """Should use default model if document has none configured"""
-        mock_get_defaults.return_value = {"llm_model": "default-model"}
+        mock_get_defaults.return_value = {
+            "llm_model": "default-model",
+            "embedding_model": "default-embedding-model"
+        }
 
         mock_ollama = Mock()
         mock_ollama.is_available.return_value = True

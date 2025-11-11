@@ -1,0 +1,208 @@
+{% extends "admin/change_list.html" %}
+{% load static %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <style>
+        /* Styling for grouped rows */
+        .identity-group-row {
+            background-color: #e8f4f8;
+            font-weight: bold;
+            cursor: pointer;
+            border-top: 2px solid #0066cc;
+        }
+
+        .identity-group-row:hover {
+            background-color: #d0e8f0;
+        }
+
+        .identity-group-row td {
+            padding: 12px 10px !important;
+        }
+
+        .identity-group-toggle {
+            display: inline-block;
+            margin-right: 8px;
+            font-size: 14px;
+            transition: transform 0.2s;
+        }
+
+        .identity-group-toggle.collapsed {
+            transform: rotate(-90deg);
+        }
+
+        .identity-mention-row {
+            transition: opacity 0.2s;
+        }
+
+        .identity-mention-row.hidden {
+            display: none;
+        }
+
+        .mention-count {
+            color: #666;
+            font-weight: normal;
+            margin-left: 8px;
+            font-size: 0.9em;
+        }
+
+        /* Hide the identity group header column content in mention rows */
+        .identity-mention-row .identity-group-cell {
+            background-color: #f9f9f9;
+            border-left: 3px solid #0066cc;
+        }
+    </style>
+{% endblock %}
+
+{% block result_list %}
+    {{ block.super }}
+    <script>
+        (function() {
+            // Wait for DOM to be ready
+            document.addEventListener('DOMContentLoaded', function() {
+                groupMentionsByIdentity();
+            });
+
+            function groupMentionsByIdentity() {
+                const resultList = document.querySelector('#result_list tbody');
+                if (!resultList) {
+                    console.log('No result_list tbody found');
+                    return;
+                }
+
+                const rows = Array.from(resultList.querySelectorAll('tr'));
+                if (rows.length === 0) {
+                    console.log('No rows found');
+                    return;
+                }
+
+                console.log('Found', rows.length, 'rows');
+
+                // Group rows by identity
+                const groups = {};
+                const groupOrder = [];
+
+                rows.forEach(row => {
+                    // Get the identity group header cell - try multiple selectors
+                    let identityCell = row.querySelector('td.field-identity_group_header');
+
+                    // If not found, try without underscore (Django might convert to dash)
+                    if (!identityCell) {
+                        identityCell = row.querySelector('td[class*="identity"]');
+                    }
+
+                    // Last resort: just use the first td that's not an action column
+                    if (!identityCell) {
+                        const cells = row.querySelectorAll('td');
+                        identityCell = cells[0]?.classList.contains('action-checkbox') ? cells[1] : cells[0];
+                    }
+
+                    if (!identityCell) {
+                        console.log('Row missing identity cell:', row);
+                        return;
+                    }
+
+                    const identityHTML = identityCell.innerHTML.trim();
+
+                    // Use identity HTML as key for grouping
+                    if (!groups[identityHTML]) {
+                        groups[identityHTML] = [];
+                        groupOrder.push(identityHTML);
+                    }
+
+                    groups[identityHTML].push(row);
+                });
+
+                console.log('Found', groupOrder.length, 'groups');
+
+                // Build new table content (use DocumentFragment for performance)
+                const fragment = document.createDocumentFragment();
+
+                // Rebuild table with group headers
+                groupOrder.forEach(identityHTML => {
+                    const mentions = groups[identityHTML];
+                    const mentionCount = mentions.length;
+
+                    // Create group header row
+                    const headerRow = document.createElement('tr');
+                    headerRow.className = 'identity-group-row';
+                    headerRow.dataset.identityGroup = identityHTML;
+
+                    // Get column count from first mention row
+                    const colCount = mentions[0].querySelectorAll('td').length;
+
+                    const headerCell = document.createElement('td');
+                    headerCell.colSpan = colCount;
+                    headerCell.innerHTML = `
+                        <span class="identity-group-toggle">▼</span>
+                        ${identityHTML}
+                        <span class="mention-count">(${mentionCount} mention${mentionCount !== 1 ? 's' : ''})</span>
+                    `;
+
+                    headerRow.appendChild(headerCell);
+
+                    // Add click handler for toggling
+                    headerRow.addEventListener('click', function() {
+                        toggleGroup(identityHTML);
+                    });
+
+                    fragment.appendChild(headerRow);
+
+                    // Add mention rows
+                    mentions.forEach(row => {
+                        row.classList.add('identity-mention-row');
+                        row.dataset.identityGroup = identityHTML;
+
+                        // Ensure row starts visible (remove any 'hidden' class)
+                        row.classList.remove('hidden');
+                        row.style.display = ''; // Explicitly set display
+
+                        // Mark the identity_group_header cell for styling
+                        let groupCell = row.querySelector('td.field-identity_group_header');
+                        if (!groupCell) {
+                            groupCell = row.querySelector('td[class*="identity"]');
+                        }
+                        if (!groupCell) {
+                            const cells = row.querySelectorAll('td');
+                            groupCell = cells[0]?.classList.contains('action-checkbox') ? cells[1] : cells[0];
+                        }
+
+                        if (groupCell) {
+                            groupCell.classList.add('identity-group-cell');
+                            // Clear the content since it's shown in the header
+                            groupCell.innerHTML = '';
+                        }
+
+                        fragment.appendChild(row);
+                    });
+                });
+
+                // Replace all at once
+                resultList.innerHTML = '';
+                resultList.appendChild(fragment);
+                console.log('Table rebuilt');
+            }
+
+            function toggleGroup(identityHTML) {
+                const headerRow = document.querySelector(`.identity-group-row[data-identity-group="${CSS.escape(identityHTML)}"]`);
+                const mentionRows = document.querySelectorAll(`.identity-mention-row[data-identity-group="${CSS.escape(identityHTML)}"]`);
+                const toggle = headerRow.querySelector('.identity-group-toggle');
+
+                // Check if currently visible
+                const isExpanded = !mentionRows[0]?.classList.contains('hidden');
+
+                if (isExpanded) {
+                    // Collapse
+                    toggle.classList.add('collapsed');
+                    toggle.textContent = '▶';
+                    mentionRows.forEach(row => row.classList.add('hidden'));
+                } else {
+                    // Expand
+                    toggle.classList.remove('collapsed');
+                    toggle.textContent = '▼';
+                    mentionRows.forEach(row => row.classList.remove('hidden'));
+                }
+            }
+        })();
+    </script>
+{% endblock %}

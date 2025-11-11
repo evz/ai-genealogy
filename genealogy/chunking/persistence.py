@@ -1,17 +1,72 @@
 """Database persistence for text chunks"""
 
 import logging
+import re
 from typing import Dict, List, Optional, Tuple
 
 from django.db import models, transaction
 
-from genealogy.models import PersonMention as PersonMentionModel
-from genealogy.models import TextChunk as TextChunkModel
-from genealogy.utils import parse_name
+from genealogy.models import (Identity, MentionToIdentity,
+                              PartnershipMention, RelationshipMention,
+                              PersonMention as PersonMentionModel,
+                              TextChunk as TextChunkModel)
+from genealogy.utils import parse_family_group_header, parse_name
 
 from .models import ChunkType, GroundingToken, TextChunk
 
 logger = logging.getLogger(__name__)
+
+
+def _create_person_mention_with_identity(
+    given_names: str,
+    surname: str,
+    generation: Optional[int],
+    genealogical_id: Optional[str],
+    document
+) -> Tuple[Optional[PersonMentionModel], Optional[Identity]]:
+    """
+    Create a PersonMention and its associated Identity.
+
+    Returns:
+        Tuple of (PersonMention, Identity) or (None, None) if validation fails
+    """
+    # Validate name quality
+    has_both_names = given_names.strip() and surname.strip()
+    has_contextual_given_name = given_names.strip() and genealogical_id
+
+    if not (has_both_names or has_contextual_given_name):
+        logger.warning(
+            f"Skipping PersonMention creation: insufficient name information "
+            f"(given_names='{given_names}', surname='{surname}', genealogical_id={genealogical_id})"
+        )
+        return None, None
+
+    # Create PersonMention
+    person_mention = PersonMentionModel.objects.create(
+        given_names=given_names,
+        surname=surname,
+        generation=generation,
+        genealogical_id=genealogical_id,
+    )
+    person_mention.source_documents.add(document)
+
+    # Create singleton Identity
+    identity = Identity.objects.create(
+        display_name=person_mention.full_name,
+        genealogical_identifier=genealogical_id,
+        notes=f"Auto-created during chunking for {person_mention.full_name}"
+    )
+
+    # Create mapping
+    MentionToIdentity.objects.create(
+        mention=person_mention,
+        identity=identity,
+        mapped_by="CHUNKING"
+    )
+
+    logger.debug(f"Created PersonMention + Identity for {person_mention.full_name} (genealogical_id={genealogical_id})")
+
+    return person_mention, identity
 
 
 def _get_page_numbers_from_tokens(
@@ -170,36 +225,123 @@ def save_chunks_to_db(
                 marker_letter = chunk.individual_marker.rstrip('.')
                 genealogical_identifier = f"{chunk.family_group_id}.{marker_letter}"
 
-        # Create PersonMention for the subject if this is an individual entry
+        # Create PersonMention + Identity for the subject if this is an individual entry
         # ONLY create if we have a valid genealogical_identifier (genealogical_id is NOT NULL in DB)
         primary_person_mention = None
         if chunk.chunk_type == ChunkType.INDIVIDUAL_ENTRY and chunk.subject and genealogical_identifier:
             # Parse name into given_names and surname
             given_names, surname = parse_name(chunk.subject)
 
-            # Validate name quality:
-            # 1. MUST have both given_names and surname, OR
-            # 2. If only given_names, MUST have genealogical_identifier (provides context)
-            has_both_names = given_names.strip() and surname.strip()
-            has_contextual_given_name = given_names.strip() and genealogical_identifier
+            # Create PersonMention + Identity for subject
+            primary_person_mention, _ = _create_person_mention_with_identity(
+                given_names=given_names,
+                surname=surname,
+                generation=generation_number,
+                genealogical_id=genealogical_identifier,
+                document=document
+            )
 
-            if has_both_names or has_contextual_given_name:
-                # Create PersonMention with genealogical_id
-                primary_person_mention = PersonMentionModel.objects.create(
-                    given_names=given_names,
-                    surname=surname,
-                    generation=generation_number,
-                    genealogical_id=genealogical_identifier,
-                )
-                # Link to document (will link to chunk after chunk is created)
-                primary_person_mention.source_documents.add(document)
+            # If subject was created, also create parents, partnership, and relationships
+            if primary_person_mention and family_groups:
+                parent_names, first_parent_gen_id = parse_family_group_header(family_groups)
 
-                logger.debug(f"Created PersonMention for {chunk.subject} with genealogical_id={genealogical_identifier}")
-            else:
-                logger.warning(
-                    f"Skipping PersonMention creation for chunk {i}: subject '{chunk.subject}' "
-                    f"lacks sufficient name information (given_names='{given_names}', surname='{surname}')"
-                )
+                if len(parent_names) >= 2:
+                    parent_mentions = []
+                    parent1 = None
+                    parent2 = None
+
+                    # Process first parent
+                    parent1_given, parent1_surname = parse_name(parent_names[0])
+                    parent_generation = generation_number - 1 if generation_number else None
+
+                    # If first parent has genealogical_id, find existing PersonMention
+                    if first_parent_gen_id:
+                        parent1 = PersonMentionModel.objects.filter(
+                            genealogical_id=first_parent_gen_id
+                        ).first()
+
+                        if parent1:
+                            # Link existing parent to this document
+                            parent1.source_documents.add(document)
+                            logger.debug(f"Found existing parent1: {parent1.full_name} ({first_parent_gen_id})")
+
+                    # If not found, create new PersonMention + Identity
+                    if not parent1:
+                        parent1, _ = _create_person_mention_with_identity(
+                            given_names=parent1_given,
+                            surname=parent1_surname,
+                            generation=parent_generation,
+                            genealogical_id=first_parent_gen_id,
+                            document=document
+                        )
+
+                    if parent1:
+                        parent_mentions.append(parent1)
+
+                    # Process second parent
+                    parent2_given, parent2_surname = parse_name(parent_names[1])
+
+                    # Try to find second parent in existing partnership with parent1
+                    if first_parent_gen_id:
+                        # Find partnerships involving parent1
+                        existing_partnerships = PartnershipMention.objects.filter(
+                            partners=parent1
+                        )
+
+                        # Look for a partner with matching name
+                        for partnership in existing_partnerships:
+                            potential_parent2 = partnership.partners.exclude(id=parent1.id).filter(
+                                given_names=parent2_given,
+                                surname=parent2_surname
+                            ).first()
+
+                            if potential_parent2:
+                                parent2 = potential_parent2
+                                parent2.source_documents.add(document)
+                                logger.debug(f"Found existing parent2 via partnership: {parent2.full_name}")
+                                break
+
+                    # If not found in partnership, create new PersonMention + Identity
+                    if not parent2:
+                        parent2, _ = _create_person_mention_with_identity(
+                            given_names=parent2_given,
+                            surname=parent2_surname,
+                            generation=parent_generation,
+                            genealogical_id=None,  # Second parent doesn't have genealogical_id
+                            document=document
+                        )
+
+                    if parent2:
+                        parent_mentions.append(parent2)
+
+                    # If we successfully created both parents, create partnership and relationships
+                    if len(parent_mentions) == 2:
+                        parent1, parent2 = parent_mentions
+
+                        # Create PartnershipMention between parents
+                        # Check if partnership already exists
+                        existing_partnership = PartnershipMention.objects.filter(
+                            partners=parent1
+                        ).filter(
+                            partners=parent2
+                        ).first()
+
+                        if not existing_partnership:
+                            partnership = PartnershipMention.objects.create(
+                                partnership_type='MARRIAGE'
+                            )
+                            partnership.partners.add(parent1, parent2)
+                            partnership.source_documents.add(document)
+                            logger.debug(f"Created PartnershipMention: {parent1.full_name} & {parent2.full_name}")
+
+                        # Create RelationshipMentions (parent -> child)
+                        for parent_mention in parent_mentions:
+                            RelationshipMention.objects.get_or_create(
+                                child_mention=primary_person_mention,
+                                parent_mention=parent_mention,
+                                defaults={'relationship_type': 'BIOLOGICAL'}
+                            )
+                            logger.debug(f"Created RelationshipMention: {parent_mention.full_name} -> {primary_person_mention.full_name}")
 
         # Create database chunk
         db_chunk = TextChunkModel.objects.create(

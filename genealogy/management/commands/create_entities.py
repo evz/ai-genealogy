@@ -15,7 +15,7 @@ from django.db import transaction
 from genealogy.models import (Document, Event, Identity, MentionToIdentity,
                               PartnershipMention, PersonMention, Place,
                               RelationshipMention, TextChunk)
-from genealogy.utils import parse_name
+from genealogy.utils import parse_family_group_header, parse_name
 
 logger = logging.getLogger(__name__)
 
@@ -89,14 +89,32 @@ class Command(BaseCommand):
                     f"Preserved {preserved_count} PersonMentions with genealogical_id (from chunking)"
                 ))
 
-        # Get chunks to process
-        chunks = TextChunk.objects.filter(
-            chunk_type='GENEALOGY_ENTRY',
-            entities_extracted=True
+        # Get chunks to process - only from DESCENDANT_GENEALOGY sections
+        from genealogy.models import BookSection
+        from django.db.models import Q
+
+        # Get descendant genealogy sections
+        sections_query = BookSection.objects.filter(
+            section_type='DESCENDANT_GENEALOGY'
         )
 
         if options['document_id']:
-            chunks = chunks.filter(document_id=options['document_id'])
+            sections_query = sections_query.filter(document_id=options['document_id'])
+
+        # Build filter for chunks in these sections (by page range)
+        chunk_filter = Q()
+        for section in sections_query:
+            chunk_filter |= Q(
+                document=section.document,
+                start_page__gte=section.start_page,
+                start_page__lte=section.end_page
+            )
+
+        # Get all chunks from descendant genealogy sections that have extracted entities
+        chunks = TextChunk.objects.filter(
+            chunk_filter,
+            entities_extracted=True
+        )
 
         chunks = chunks.order_by('document', 'sequence_number')
 
@@ -140,7 +158,7 @@ class Command(BaseCommand):
         """Process a single chunk to create entities"""
 
         # Parse family group to identify parent names and generation context
-        parent_names_in_header = self._parse_family_group(chunk.family_groups)
+        parent_names_in_header, first_parent_gen_id = parse_family_group_header(chunk.family_groups)
 
         # Track persons created in this chunk for relationship linking
         chunk_persons = {}  # name -> PersonMention mapping
@@ -329,30 +347,6 @@ class Command(BaseCommand):
                 else:
                     self.stats['events_created'] += 1
 
-    def _parse_family_group(self, family_groups: list) -> list:
-        """Extract parent names from family group header"""
-        if not family_groups:
-            return []
-
-        # Example: "XII.14. Kinderen van Marinus Wilhelmus Borsten en Alieke Zwerver"
-        # Example: "XlI.10. Children of Jamie Nicole Hall and Joshua Abercrombie (X1.16.b)"
-        family_group = family_groups[0]
-
-        # Pattern to extract everything after "Kinderen van" or "Children of"
-        # Stop at opening parenthesis if present
-        pattern = r'(?:Kinderen\s+van|Children\s+of)\s+(.+?)(?:\s*\(|$)'
-        match = re.search(pattern, family_group, re.IGNORECASE)
-
-        if not match:
-            return []
-
-        names_part = match.group(1).strip()
-
-        # Split on "en" or "and" to get both parent names
-        parent_names = re.split(r'\s+(?:en|and)\s+', names_part, flags=re.IGNORECASE)
-        parent_names = [p.strip() for p in parent_names if p.strip()]
-
-        return parent_names
 
     def _determine_generation(self, person_name: str, chunk: TextChunk, parent_names: list) -> int:
         """
