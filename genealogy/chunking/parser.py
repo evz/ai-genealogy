@@ -253,11 +253,18 @@ def extract_person_from_individual_entry(content: str) -> Optional[str]:
     """
     # Match individual entry pattern: "a. FirstName [Nickname] LastName, ..."
     # Also match "I." (uppercase I) which is a common OCR error for "l." (lowercase L)
-    match = re.match(r'^[a-zI]\.\s+([A-Z][^,*†x~]+?)(?:\s*\[[^\]]+\])?\s*[,*†x~]', content)
+    # Updated to handle:
+    # - Optional parenthetical prefix like "(Misschien)" or "(hypothetisch)"
+    # - Entries ending with period, comma, or traditional markers
+    # - Trailing genealogical references like (III.1)
+    pattern = r'^[a-zI]\.\s+(?:\([^)]+\)\s*)?(.+?)(?:\s*\[[^\]]+\])?\s*(?:[,*†x~.]|\s*\([IVX]+\.\d+(?:\.[a-z])?\)|$)'
+    match = re.match(pattern, content, re.MULTILINE)
     if match:
         name = match.group(1).strip()
         # Remove bracketed nicknames if they slipped through
         name = re.sub(r'\s*\[[^\]]+\]\s*', ' ', name).strip()
+        # Remove trailing parenthetical references like (III.1)
+        name = re.sub(r'\s*\([^)]+\)\s*$', '', name).strip()
         return name
     return None
 

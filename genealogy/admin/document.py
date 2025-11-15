@@ -14,11 +14,10 @@ from django.utils.html import format_html
 if TYPE_CHECKING:
     from django.core.files.uploadedfile import UploadedFile
 
-from ..models import (Document, DocumentPage, Event, Place, PotentialDuplicate,
-                      TextChunk)
+from ..models import (Document, DocumentPage, Event, Place, TextChunk)
 from ..ollama_utils import OllamaClient, get_default_models
-from ..tasks import (create_document_chunks, extract_entities_from_chunks,
-                     process_page_ocr)
+from ..tasks import (build_genealogy_graph, create_document_chunks,
+                     extract_entities_from_chunks, process_page_ocr)
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +64,113 @@ class DocumentAdmin(admin.ModelAdmin):
 
     extraction_status.short_description = "Extraction Status"  # type: ignore
 
-    actions = ["extract_genealogy_data", "rerun_text_chunking", "reset_extraction_status"]
+    actions = ["build_genealogy_graph", "persist_extracted_entities", "extract_genealogy_data", "rerun_text_chunking", "reset_extraction_status"]
+
+    def build_genealogy_graph(self, request, queryset):
+        """Admin action: Build genealogy graph (Person/Relationship/Partnership) from chunks"""
+        success_count = 0
+        error_count = 0
+
+        for doc in queryset:
+            # Check if document has chunks with genealogical identifiers
+            chunks_count = doc.text_chunks.filter(
+                genealogical_identifier__isnull=False,
+                subject__isnull=False,
+            ).count()
+
+            if chunks_count == 0:
+                error_count += 1
+                self.message_user(
+                    request,
+                    f"Document {doc.title} has no chunks with genealogical identifiers. Run text chunking first.",
+                    level=messages.WARNING,
+                )
+                continue
+
+            try:
+                # Start graph building task
+                task = build_genealogy_graph.delay(str(doc.id))
+                success_count += 1
+                logger.info(f"Started build_genealogy_graph task {task.id} for document {doc}")
+
+            except Exception as e:
+                error_count += 1
+                self.message_user(
+                    request,
+                    f"Error starting graph building for {doc.title}: {e}",
+                    level=messages.ERROR,
+                )
+
+        if success_count:
+            self.message_user(
+                request,
+                f"Genealogy graph building started for {success_count} documents. "
+                f"This will create Person, Relationship, and Partnership records.",
+            )
+        if error_count:
+            self.message_user(
+                request,
+                f"{error_count} documents could not be processed.",
+                level=messages.WARNING,
+            )
+
+    build_genealogy_graph.short_description = (  # type: ignore
+        "Build genealogy graph (Person/Relationship/Partnership)"
+    )
+
+    def persist_extracted_entities(self, request, queryset):
+        """Admin action: Persist extracted entities (events) to database records"""
+        from genealogy.tasks import persist_extracted_entities as persist_task
+
+        success_count = 0
+        error_count = 0
+
+        for doc in queryset:
+            # Check if document has extracted entities
+            chunks_with_events = doc.text_chunks.filter(
+                entities_extracted=True,
+                extracted_events__isnull=False,
+            ).exclude(extracted_events=[]).count()
+
+            if chunks_with_events == 0:
+                error_count += 1
+                self.message_user(
+                    request,
+                    f"Document {doc.title} has no chunks with extracted events. Run LLM extraction first.",
+                    level=messages.WARNING,
+                )
+                continue
+
+            try:
+                # Start persistence task
+                task = persist_task.delay(str(doc.id))
+                success_count += 1
+                logger.info(f"Started persist_extracted_entities task {task.id} for document {doc}")
+
+            except Exception as e:
+                error_count += 1
+                self.message_user(
+                    request,
+                    f"Error starting entity persistence for {doc.title}: {e}",
+                    level=messages.ERROR,
+                )
+
+        if success_count:
+            self.message_user(
+                request,
+                f"Entity persistence started for {success_count} documents. "
+                f"This will create Event records linked to Person records.",
+            )
+        if error_count:
+            self.message_user(
+                request,
+                f"{error_count} documents could not be processed.",
+                level=messages.WARNING,
+            )
+
+    persist_extracted_entities.short_description = (  # type: ignore
+        "Persist extracted entities (create Event records)"
+    )
 
     def extract_genealogy_data(self, request, queryset):
         """Admin action: Start LLM-based entity extraction from chunks for selected documents"""

@@ -8,7 +8,7 @@ import pytest
 from genealogy.chunking.models import (BoundingBox, ChunkType, GroundingToken,
                                        TextChunk)
 from genealogy.chunking.persistence import save_chunks_to_db
-from genealogy.models import Document, PersonMention
+from genealogy.models import Document
 from genealogy.models import TextChunk as TextChunkModel
 
 

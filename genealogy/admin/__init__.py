@@ -2,26 +2,21 @@
 from .book_section import BookSectionAdmin
 from .document import DocumentAdmin
 from .document_page import DocumentPageAdmin
-from .duplicate_clusters import MatchReasonFilter, PotentialDuplicateAdmin
 from .event import EventAdmin
-from .identity import IdentityAdmin
-from .partnership import PartnershipMentionAdmin
-from .person_mention import PersonMentionAdmin
+from .partnership_admin import PartnershipAdmin
+from .person import PersonAdmin
 from .place import PlaceAdmin
-from .relationship import RelationshipMentionAdmin
+from .relationship_admin import RelationshipAdmin
 from .textchunk import TextChunkAdmin
 
 __all__ = [
+    'BookSectionAdmin',
     'DocumentAdmin',
     'DocumentPageAdmin',
-    'BookSectionAdmin',
-    'PersonMentionAdmin',
-    'IdentityAdmin',
-    'PlaceAdmin',
-    'PartnershipMentionAdmin',
     'EventAdmin',
-    'RelationshipMentionAdmin',
+    'PartnershipAdmin',
+    'PersonAdmin',
+    'PlaceAdmin',
+    'RelationshipAdmin',
     'TextChunkAdmin',
-    'PotentialDuplicateAdmin',
-    'MatchReasonFilter',
 ]

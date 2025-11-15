@@ -11,25 +11,6 @@ de Posthoorn (RK).
 
 INTERPRETATION: Wouter van Zanten, son of Aart van Santen and Willemijntje Zuidam was baptised in Gameren on December 9, 1770 and died in Culemborg on August 27, 1826. He was a worker. He married Everdina [Dina] Beijer who was born in Kranenburg in about 1768 and died in Culemborg on January 12, 1832. She was the daughter of Wessel Beijer and Geertruida van Waardenburg. Wouter lived at Huis 222 in Culemborg in 1832. NOTES: In his baptismal record, Wouter's mother is listed as Lijsbet van Suijdam. Wouter was listed in the population register for Culemborg in 1812. Everdina Beijer's baptismal record was not found. However, a sister, Maria, was baptised on July 7, 1760 in the Poosthorn Roman Catholic (RK) church in Amsterdam.
 
-PEOPLE:
-- Wouter van Zanten
-- Everdina Beijer
-- Aart van Santen
-- Willemijntje Zuidam
-- Wessel Beijer
-- Geertruida van Waardenburg
-
-PARENT_CHILD:
-- Wouter van Zanten|child|Aart van Santen
-- Wouter van Zanten|child|Willemijntje Zuidam
-- Everdina Beijer|child|Wessel Beijer
-- Everdina Beijer|child|Geertruida van Waardenburg
-
-PARTNERSHIPS:
-- Wouter van Zanten|spouse|Everdina Beijer
-- Wessel Beijer|spouse|Geertruida van Waardenburg
-- Aart van Santen|spouse|Willemijntje Zuidam
-
 EVENTS:
 - Wouter van Zanten|BAPT|1770-12-09|Gameren
 - Wouter van Zanten|OCCU||arbeider
@@ -46,18 +27,6 @@ CONTENT: h. Marinus Wilhelmus van Zanten, * Amsterdam 18.8.1882, t Amsterdam 23.
 === Page 25 ===
 
 INTERPRETATION: Marinus Wilhelmus van Zanten, son of Leonardus van Zanten and Gerritje Johanna Rob was born August 18, 1882 in Amsterdam and died August 23, 1883 in Amsterdam.
-
-PEOPLE:
-- Marinus Wilhelmus van Zanten
-- Leonardus van Zanten
-- Gerritje Johanna Rob
-
-PARENT_CHILD:
-- Marinus Wilhelmus van Zanten|child|Leonardus van Zanten
-- Marinus Wilhelmus van Zanten|child|Gerritje Johanna Rob
-
-PARTNERSHIPS:
-- Leonardus van Zanten|spouse|Gerritje Johanna Rob
 
 EVENTS:
 - Marinus Wilhelmus van Zanten|BIRT|1882-08-18|Amsterdam
@@ -211,42 +180,6 @@ INTERPRETATION: Bessel van Zanten, son of Aart van Zanten and Anna Antonia Kappe
 In 1875 he lived at lepenlaan 2 in Bussum with his son Pieter.
 Herman Daniël van Zanten was born November 28, 1842 in and died November 29, 1842 in Naarden
 
-PEOPLE:
-- Bessel van Zanten
-- Aart van Zanten
-- Anna Antonia Kappers
-- Geertruij Voorhaar
-- Trijntje Anna Catharina Boer Rookhuijzen
-- Pieter van Zanten
-- Geertruij Voorhaar
-- Pieter van den Bergh
-- Dirk Voorhaar
-- Dirkje van Leeuwen
-- Trijntje Anna Catharina Boer Rookhuijzen
-- Evert de Jager
-- Jan Boer Rookhuijzen
-- Anna Catharina van Loveren
-- Boudewijn van den Bergh
-- Herman Daniel van Zanten
-
-PARENT_CHILD:
-- Bessel van Zanten|child|Aart van Zanten
-- Bessel van Zanten|child|Anna Antonia Kappers
-- Bessel van Zanten|parent|Pieter van Zanten
-- Geertruij Voorhaar|parent|Boudewijn van den Bergh
-- Geertruij Voorhaar|child|Dirk Voorhaar
-- Geertruij Voorhaar|child|Dirkje van Leeuwen
-- Trijntje Anna Catharina Boer Rookhuijzen|child|Jan Boer Rookhuijzen
-- Trijntje Anna Catharina Boer Rookhuijzen|child|Anna Catharina van Loveren
-- Herman Daniel van Zanten|child|Aart van Zanten
-- Herman Daniel van Zanten|child|Anna Antonia Kappers
-
-PARTNERSHIPS:
-- Geertruij Voorhaar|spouse|Pieter van den Bergh
-- Trijntje Anna Catharina Boer Rookhuijzen|spouse|Evert de Jager
-- Bessel van Zanten|spouse|Geertruij Voorhaar
-- Bessel van Zanten|spouse|Trijntje Anna Catharina Boer Rookhuijzen
-
 EVENTS:
 - Bessel van Zanten|BIRT|1841-08-17|Naarden
 - Bessel van Zanten|EDUC|1847-1852|Naarden
@@ -293,12 +226,6 @@ is nadat de ouders vernoemd waren. We betreden hier het terrein van de speculati
 
 INTERPRETATION: Largely speculative musings regarding early naming conventions within the family
 
-PEOPLE: None
-
-PARENT_CHILD: None
-
-PARTNERSHIPS: None
-
 EVENTS: None
 
 ------
@@ -306,18 +233,6 @@ EVENTS: None
 FAMILY GROUP: lll.2. Kinderen van Arien Gerritse van Santen en Hermina Noorthoorn (ll.1.c)
 
 CONTENT: j. Jan, - Haaften 20.9.1739,
-
-PEOPLE:
-- Jan van Santen
-- Arien Gerritse van Santen
-- Hermina Noorthoorn
-
-PARENT_CHILD:
-- Jan van Santen|child|Arien Gerritse van Santen
-- Jan van Santen|child|Hermina Noorthoorn
-
-PARTNERSHIPS:
-- Arien Gerritse van Santen|spouse|Hermina Noorthoorn
 
 EVENTS:
 - Jan van Santen|BAPT|1739-09-20|Haaften

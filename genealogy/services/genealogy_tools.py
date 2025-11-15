@@ -4,22 +4,16 @@ Genealogy tools for LLM agentic workflows.
 These tools allow the LLM to iteratively request information
 to answer complex queries like relationship tracing and disambiguation.
 
-All tools work with Identity objects (canonical people) rather than
-raw PersonMentions, providing complete aggregated information.
+Works with the simplified Person model - one genealogical_id = one Person.
 """
 
 import logging
-from typing import List, Dict, Optional
+from typing import Dict, Optional
 from uuid import UUID
-from django.db.models import Q, Count
-from genealogy.models import (
-    Identity,
-    MentionToIdentity,
-    PersonMention,
-    RelationshipMention,
-    Event,
-    PartnershipMention,
-)
+
+from django.db.models import Q
+
+from genealogy.models import Event, Partnership, Person, Relationship
 
 logger = logging.getLogger(__name__)
 
@@ -30,32 +24,26 @@ class GenealogyTools:
     def __init__(self):
         self.max_results = 20  # Safety limit for queries
 
-    def _get_identity(self, person_id: str, annotate_mentions: bool = False):
+    def _get_person(self, person_id: str) -> Optional[Person]:
         """
-        Get identity by genealogical_id or UUID.
+        Get person by genealogical_id or UUID.
 
         Args:
-            person_id: Identity UUID or genealogical_id
-            annotate_mentions: If True, annotate with mention_count
+            person_id: Person UUID or genealogical_id
 
         Returns:
-            Identity object or None if not found
+            Person object or None if not found
         """
-        # Build base queryset
-        base_qs = Identity.objects.filter(is_deleted=False)
-        if annotate_mentions:
-            base_qs = base_qs.annotate(mention_count=Count('mention_mappings'))
-
         # Try genealogical_id first
-        identity = base_qs.filter(genealogical_identifier=person_id).first()
+        person = Person.objects.filter(genealogical_id=person_id).first()
 
-        if identity:
-            return identity
+        if person:
+            return person
 
         # Try UUID - validate format first
         try:
             UUID(person_id)  # Validate UUID format
-            return base_qs.filter(id=person_id).first()
+            return Person.objects.filter(id=person_id).first()
         except (ValueError, TypeError):
             # Not a valid UUID
             return None
@@ -78,8 +66,7 @@ class GenealogyTools:
                         "genealogical_id": "II.3.a",
                         "birth": {"date": "1845-03-12", "place": "Amsterdam"},
                         "death": {"date": "1920-11-03", "place": "Den Haag"},
-                        "parents": ["Johannes van Zanten", "Maria de Vries"],
-                        "num_mentions": 3
+                        "parents": ["Johannes van Zanten", "Maria de Vries"]
                     }
                 ],
                 "truncated": bool
@@ -88,65 +75,50 @@ class GenealogyTools:
         # Limit max_results for safety
         max_results = min(max_results, self.max_results)
 
-        # Search identities by display name
-        identities = Identity.objects.filter(
-            display_name__icontains=name,
-            is_deleted=False
-        ).annotate(
-            mention_count=Count('mention_mappings')
-        ).order_by('-mention_count', 'display_name')[:max_results]
+        # Search by given names or surname
+        people = Person.objects.filter(
+            Q(given_names__icontains=name) | Q(surname__icontains=name)
+        ).order_by('genealogical_id')[:max_results]
 
         results = []
-        for identity in identities:
-            # Get birth/death events from all mentions
-            mention_ids = identity.mention_mappings.values_list('mention_id', flat=True)
-
+        for person in people:
+            # Get birth/death events
             birth = Event.objects.filter(
-                mention_id__in=mention_ids,
+                person=person,
                 event_type='BIRT'
-            ).select_related('place').first()
+            ).first()
 
             death = Event.objects.filter(
-                mention_id__in=mention_ids,
+                person=person,
                 event_type='DEAT'
-            ).select_related('place').first()
+            ).first()
 
-            # Get parents (deduplicated by identity)
-            parent_rels = RelationshipMention.objects.filter(
-                child_mention_id__in=mention_ids
-            ).select_related('parent_mention')
+            # Get parents
+            parent_rels = Relationship.objects.filter(
+                child=person
+            ).select_related('parent')
 
-            parent_mention_ids = parent_rels.values_list('parent_mention_id', flat=True)
-            parent_mappings = MentionToIdentity.objects.filter(
-                mention_id__in=parent_mention_ids
-            ).select_related('identity')
-
-            parent_identities = {}
-            for mapping in parent_mappings:
-                parent_identities[mapping.identity.id] = mapping.identity.display_name
-
-            parents = list(parent_identities.values())
+            parents = [rel.parent.full_name for rel in parent_rels]
 
             results.append({
-                "id": str(identity.id),
-                "display_name": identity.display_name,
-                "genealogical_id": identity.genealogical_identifier,
+                "id": str(person.id),
+                "display_name": person.full_name,
+                "genealogical_id": person.genealogical_id,
                 "birth": {
                     "date": birth.date.isoformat() if birth and birth.date else None,
-                    "place": birth.place.name if birth and birth.place else None
+                    "place": birth.place if birth else None
                 } if birth else None,
                 "death": {
                     "date": death.date.isoformat() if death and death.date else None,
-                    "place": death.place.name if death and death.place else None
+                    "place": death.place if death else None
                 } if death else None,
-                "parents": parents,
-                "num_mentions": identity.mention_count
+                "parents": parents
             })
 
         return {
             "count": len(results),
             "people": results,
-            "truncated": identities.count() >= max_results
+            "truncated": len(people) >= max_results
         }
 
     def get_person_details(self, person_id: str) -> Dict:
@@ -154,7 +126,7 @@ class GenealogyTools:
         Get detailed information about a specific person.
 
         Args:
-            person_id: Identity UUID or genealogical_id (e.g., "II.3.a")
+            person_id: Person UUID or genealogical_id (e.g., "II.3.a")
 
         Returns:
             {
@@ -167,122 +139,70 @@ class GenealogyTools:
                 ],
                 "parents": [{"id": "uuid", "name": "Johannes van Zanten"}],
                 "children": [{"id": "uuid", "name": "Anna van Zanten"}],
-                "partners": [{"id": "uuid", "name": "Maria de Vries", "type": "Marriage"}],
-                "num_mentions": 3
+                "partners": [{"id": "uuid", "name": "Maria de Vries", "type": "Marriage"}]
             }
         """
-        # Get identity by genealogical_id or UUID (with mention count)
-        identity = self._get_identity(person_id, annotate_mentions=True)
+        # Get person by genealogical_id or UUID
+        person = self._get_person(person_id)
 
-        if not identity:
+        if not person:
             return {"error": f"Person not found: {person_id}"}
 
-        # Get all mention IDs for this identity
-        mention_ids = list(identity.mention_mappings.values_list('mention_id', flat=True))
-
-        # Get all events from all mentions
-        events = Event.objects.filter(
-            mention_id__in=mention_ids
-        ).select_related('place').order_by('date')
+        # Get all events
+        events = Event.objects.filter(person=person).order_by('date')
 
         events_data = []
         for event in events:
-            date_str = event.date.isoformat() if event.date else None
-            if event.date_estimated and date_str:
-                date_str += " (estimated)"
-
             events_data.append({
                 "type": event.get_event_type_display(),
-                "date": date_str,
-                "place": event.place.name if event.place else None,
+                "date": event.date.isoformat() if event.date else None,
+                "place": event.place,
                 "description": event.description
             })
 
-        # Get parents (deduplicated by identity)
-        parent_rels = RelationshipMention.objects.filter(
-            child_mention_id__in=mention_ids
-        ).select_related('parent_mention')
-
-        parent_mention_ids = parent_rels.values_list('parent_mention_id', flat=True)
-        parent_mappings = MentionToIdentity.objects.filter(
-            mention_id__in=parent_mention_ids
-        ).select_related('identity')
-
-        parent_identities = {}
-        for mapping in parent_mappings:
-            parent_identities[mapping.identity.id] = mapping.identity
+        # Get parents
+        parent_rels = Relationship.objects.filter(
+            child=person
+        ).select_related('parent')
 
         parents = [
-            {"id": str(identity.id), "name": identity.display_name}
-            for identity in parent_identities.values()
+            {"id": str(rel.parent.id), "name": rel.parent.full_name, "genealogical_id": rel.parent.genealogical_id}
+            for rel in parent_rels
         ]
 
-        # Get children (deduplicated by identity)
-        child_rels = RelationshipMention.objects.filter(
-            parent_mention_id__in=mention_ids
-        ).select_related('child_mention')
-
-        child_mention_ids = child_rels.values_list('child_mention_id', flat=True)
-        child_mappings = MentionToIdentity.objects.filter(
-            mention_id__in=child_mention_ids
-        ).select_related('identity')
-
-        child_identities = {}
-        for mapping in child_mappings:
-            child_identities[mapping.identity.id] = mapping.identity
+        # Get children
+        child_rels = Relationship.objects.filter(
+            parent=person
+        ).select_related('child')
 
         children = [
-            {"id": str(identity.id), "name": identity.display_name}
-            for identity in child_identities.values()
+            {"id": str(rel.child.id), "name": rel.child.full_name, "genealogical_id": rel.child.genealogical_id}
+            for rel in child_rels
         ]
 
-        # Get partnerships (deduplicated by partner identity)
-        partnerships = PartnershipMention.objects.filter(
-            partners__id__in=mention_ids
-        ).distinct().prefetch_related('partners')
+        # Get partnerships
+        partnerships = Partnership.objects.filter(
+            Q(partner1=person) | Q(partner2=person)
+        ).select_related('partner1', 'partner2')
 
-        partner_identities = {}
+        partners = []
         for partnership in partnerships:
-            # Get partner mentions (excluding this identity's mentions)
-            partner_mentions = partnership.partners.exclude(id__in=mention_ids)
-
-            for partner_mention in partner_mentions:
-                try:
-                    partner_mapping = MentionToIdentity.objects.get(mention=partner_mention)
-                    partner_identity = partner_mapping.identity
-
-                    if partner_identity.id not in partner_identities:
-                        partner_identities[partner_identity.id] = {
-                            'identity': partner_identity,
-                            'types': set()
-                        }
-
-                    partner_identities[partner_identity.id]['types'].add(
-                        partnership.get_partnership_type_display()
-                    )
-                except MentionToIdentity.DoesNotExist:
-                    # Partner not merged yet - skip
-                    continue
-
-        partners = [
-            {
-                "id": str(data['identity'].id),
-                "name": data['identity'].display_name,
-                "type": ", ".join(data['types'])
-            }
-            for data in partner_identities.values()
-        ]
+            partner = partnership.partner2 if partnership.partner1 == person else partnership.partner1
+            partners.append({
+                "id": str(partner.id),
+                "name": partner.full_name,
+                "genealogical_id": partner.genealogical_id,
+                "type": partnership.get_partnership_type_display()
+            })
 
         return {
-            "id": str(identity.id),
-            "display_name": identity.display_name,
-            "genealogical_id": identity.genealogical_identifier,
+            "id": str(person.id),
+            "display_name": person.full_name,
+            "genealogical_id": person.genealogical_id,
             "events": events_data,
             "parents": parents,
             "children": children,
-            "partners": partners,
-            "num_mentions": identity.mention_count,
-            "notes": identity.notes
+            "partners": partners
         }
 
     def search_by_birth_year(
@@ -302,88 +222,70 @@ class GenealogyTools:
         Returns:
             Same format as search_person_by_name
         """
-        # First, get identities matching the name
-        identities = Identity.objects.filter(
-            display_name__icontains=name,
-            is_deleted=False
+        # First, get people matching the name
+        people = Person.objects.filter(
+            Q(given_names__icontains=name) | Q(surname__icontains=name)
         )
 
         # Filter by birth year if specified
         if birth_year_min or birth_year_max:
-            # Get mention IDs with birth events in the year range
-            birth_events = Event.objects.filter(event_type='BIRT')
+            # Get person IDs with birth events in the year range
+            birth_events = Event.objects.filter(
+                event_type='BIRT',
+                date__isnull=False
+            )
 
             if birth_year_min:
                 birth_events = birth_events.filter(date__year__gte=birth_year_min)
             if birth_year_max:
                 birth_events = birth_events.filter(date__year__lte=birth_year_max)
 
-            # Get mention IDs with matching birth events
-            mention_ids_with_birth = birth_events.values_list('mention_id', flat=True)
+            person_ids_with_birth = birth_events.values_list('person_id', flat=True)
 
-            # Get identity IDs that have any of these mentions
-            identity_ids_with_birth = MentionToIdentity.objects.filter(
-                mention_id__in=mention_ids_with_birth
-            ).values_list('identity_id', flat=True)
+            # Filter people to only those with matching birth years
+            people = people.filter(id__in=person_ids_with_birth)
 
-            # Filter identities to only those with matching birth years
-            identities = identities.filter(id__in=identity_ids_with_birth)
-
-        # Annotate and limit
-        identities = identities.annotate(
-            mention_count=Count('mention_mappings')
-        ).order_by('-mention_count', 'display_name')[:self.max_results]
+        # Limit results
+        people = people.order_by('genealogical_id')[:self.max_results]
 
         # Build results using same logic as search_person_by_name
         results = []
-        for identity in identities:
-            mention_ids = identity.mention_mappings.values_list('mention_id', flat=True)
-
+        for person in people:
             birth = Event.objects.filter(
-                mention_id__in=mention_ids,
+                person=person,
                 event_type='BIRT'
-            ).select_related('place').first()
+            ).first()
 
             death = Event.objects.filter(
-                mention_id__in=mention_ids,
+                person=person,
                 event_type='DEAT'
-            ).select_related('place').first()
+            ).first()
 
-            parent_rels = RelationshipMention.objects.filter(
-                child_mention_id__in=mention_ids
-            ).select_related('parent_mention')
+            parent_rels = Relationship.objects.filter(
+                child=person
+            ).select_related('parent')
 
-            parent_mention_ids = parent_rels.values_list('parent_mention_id', flat=True)
-            parent_mappings = MentionToIdentity.objects.filter(
-                mention_id__in=parent_mention_ids
-            ).select_related('identity')
-
-            parent_identities = {}
-            for mapping in parent_mappings:
-                parent_identities[mapping.identity.id] = mapping.identity.display_name
-
-            parents = list(parent_identities.values())
+            parents = [rel.parent.full_name for rel in parent_rels]
 
             results.append({
-                "id": str(identity.id),
-                "display_name": identity.display_name,
-                "genealogical_id": identity.genealogical_identifier,
+                "id": str(person.id),
+                "display_name": person.full_name,
+                "genealogical_id": person.genealogical_id,
                 "birth": {
                     "date": birth.date.isoformat() if birth and birth.date else None,
-                    "place": birth.place.name if birth and birth.place else None
+                    "place": birth.place if birth else None
                 } if birth else None,
                 "death": {
                     "date": death.date.isoformat() if death and death.date else None,
-                    "place": death.place.name if death and death.place else None
+                    "place": death.place if death else None
                 } if death else None,
-                "parents": parents,
-                "num_mentions": identity.mention_count
+                "parents": parents
             })
 
         return {
             "count": len(results),
             "people": results,
-            "truncated": identities.count() >= self.max_results
+            "truncated": len(people) >= self.max_results
         }
 
     def get_children(self, person_id: str) -> Dict:
@@ -391,61 +293,51 @@ class GenealogyTools:
         Get all children of a person.
 
         Args:
-            person_id: Identity UUID or genealogical_id
+            person_id: Person UUID or genealogical_id
 
         Returns:
             {
                 "person": {"id": "uuid", "name": "Pieter van Zanten"},
                 "children": [
-                    {"id": "uuid", "name": "Anna van Zanten", "birth_year": 1870}
+                    {"id": "uuid", "name": "Anna van Zanten", "birth_year": "1870"}
                 ],
                 "count": int
             }
         """
-        # Get identity by genealogical_id or UUID
-        identity = self._get_identity(person_id)
+        # Get person by genealogical_id or UUID
+        person = self._get_person(person_id)
 
-        if not identity:
+        if not person:
             return {"error": f"Person not found: {person_id}"}
 
-        # Get all mention IDs for this identity
-        mention_ids = list(identity.mention_mappings.values_list('mention_id', flat=True))
-
         # Get child relationships
-        child_rels = RelationshipMention.objects.filter(
-            parent_mention_id__in=mention_ids
-        ).select_related('child_mention')
-
-        # Get child mention IDs and resolve to identities
-        child_mention_ids = child_rels.values_list('child_mention_id', flat=True)
-        child_mappings = MentionToIdentity.objects.filter(
-            mention_id__in=child_mention_ids
-        ).select_related('identity')
-
-        child_identities = {}
-        for mapping in child_mappings:
-            child_identities[mapping.identity.id] = mapping.identity
+        child_rels = Relationship.objects.filter(
+            parent=person
+        ).select_related('child')
 
         # Get birth years for children
         children = []
-        for child_identity in child_identities.values():
-            child_mention_ids = child_identity.mention_mappings.values_list('mention_id', flat=True)
+        for rel in child_rels:
+            child = rel.child
             birth = Event.objects.filter(
-                mention_id__in=child_mention_ids,
+                person=child,
                 event_type='BIRT'
             ).first()
 
+            # Get birth year from date object
+            birth_year = birth.date.year if birth and birth.date else None
+
             children.append({
-                "id": str(child_identity.id),
-                "name": child_identity.display_name,
-                "genealogical_id": child_identity.genealogical_identifier,
-                "birth_year": birth.date.year if birth and birth.date else None
+                "id": str(child.id),
+                "name": child.full_name,
+                "genealogical_id": child.genealogical_id,
+                "birth_year": birth_year
             })
 
         return {
             "person": {
-                "id": str(identity.id),
-                "name": identity.display_name
+                "id": str(person.id),
+                "name": person.full_name
             },
             "children": children,
             "count": len(children)
@@ -456,7 +348,7 @@ class GenealogyTools:
         Get parents of a person.
 
         Args:
-            person_id: Identity UUID or genealogical_id
+            person_id: Person UUID or genealogical_id
 
         Returns:
             {
@@ -467,42 +359,30 @@ class GenealogyTools:
                 "count": int
             }
         """
-        # Get identity by genealogical_id or UUID
-        identity = self._get_identity(person_id)
+        # Get person by genealogical_id or UUID
+        person = self._get_person(person_id)
 
-        if not identity:
+        if not person:
             return {"error": f"Person not found: {person_id}"}
 
-        # Get all mention IDs for this identity
-        mention_ids = list(identity.mention_mappings.values_list('mention_id', flat=True))
-
         # Get parent relationships
-        parent_rels = RelationshipMention.objects.filter(
-            child_mention_id__in=mention_ids
-        ).select_related('parent_mention')
-
-        parent_mention_ids = parent_rels.values_list('parent_mention_id', flat=True)
-        parent_mappings = MentionToIdentity.objects.filter(
-            mention_id__in=parent_mention_ids
-        ).select_related('identity')
-
-        parent_identities = {}
-        for mapping in parent_mappings:
-            parent_identities[mapping.identity.id] = mapping.identity
+        parent_rels = Relationship.objects.filter(
+            child=person
+        ).select_related('parent')
 
         parents = [
             {
-                "id": str(identity.id),
-                "name": identity.display_name,
-                "genealogical_id": identity.genealogical_identifier
+                "id": str(rel.parent.id),
+                "name": rel.parent.full_name,
+                "genealogical_id": rel.parent.genealogical_id
             }
-            for identity in parent_identities.values()
+            for rel in parent_rels
         ]
 
         return {
             "person": {
-                "id": str(identity.id),
-                "name": identity.display_name
+                "id": str(person.id),
+                "name": person.full_name
             },
             "parents": parents,
             "count": len(parents)

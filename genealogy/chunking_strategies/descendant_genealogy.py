@@ -134,7 +134,7 @@ class DescendantGenealogyChunkingStrategy(ChunkingStrategy):
 
                     if baseline_x1 is not None:
                         x1_diff = abs(next_token.bbox.x1 - baseline_x1)
-                        if x1_diff < 20:
+                        if x1_diff <= 25:  # Fixed: use <= and slightly larger threshold
                             break
 
                     skip_indices.add(j)
@@ -171,8 +171,62 @@ class DescendantGenealogyChunkingStrategy(ChunkingStrategy):
 
         return images, info_box_groups, main_flow_tokens
 
+    def _split_multi_sibling_tokens(self, tokens):
+        """
+        Pre-process tokens to split any that contain multiple sibling entries.
+
+        Some OCR tokens contain multiple individual entries (a., b., c.) in a single token.
+        This splits them into separate tokens to ensure each sibling gets their own chunk.
+        """
+        import re
+        from ..chunking.parser import INDIVIDUAL_ENTRY_PATTERN
+        from ..chunking.models import GroundingToken
+
+        split_tokens = []
+
+        for token in tokens:
+            # Check if token contains multiple lines starting with individual entry markers
+            lines = token.content.split('\n')
+            entry_line_indices = []
+
+            for i, line in enumerate(lines):
+                if INDIVIDUAL_ENTRY_PATTERN.match(line.strip()):
+                    entry_line_indices.append(i)
+
+            # If we found multiple entry markers, split the token
+            if len(entry_line_indices) > 1:
+                # Split into separate tokens
+                for idx_pos, line_idx in enumerate(entry_line_indices):
+                    # Determine the end line for this entry
+                    if idx_pos < len(entry_line_indices) - 1:
+                        end_line_idx = entry_line_indices[idx_pos + 1]
+                    else:
+                        end_line_idx = len(lines)
+
+                    # Extract lines for this entry
+                    entry_lines = lines[line_idx:end_line_idx]
+                    entry_content = '\n'.join(entry_lines).strip()
+
+                    # Create a new token with the same metadata but split content
+                    split_token = GroundingToken(
+                        element_type=token.element_type,
+                        bbox=token.bbox,  # Keep same bbox (approximate)
+                        content=entry_content,
+                        raw_match=token.raw_match,  # Keep original raw_match
+                        is_inverted=token.is_inverted,
+                    )
+                    split_tokens.append(split_token)
+            else:
+                # No splitting needed
+                split_tokens.append(token)
+
+        return split_tokens
+
     def _chunk_main_flow(self, tokens, document):
         """Chunk main flow tokens using handler pattern"""
+        # Pre-process: split tokens that contain multiple sibling entries
+        tokens = self._split_multi_sibling_tokens(tokens)
+
         chunks = []
         i = 0
 

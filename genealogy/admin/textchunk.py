@@ -6,7 +6,7 @@ from django.urls import reverse
 from django.utils.html import format_html
 
 from ..extraction_strategies import get_strategy
-from ..models import BookSection, Event, PersonMention, RelationshipMention, TextChunk
+from ..models import BookSection, Event, Person, Relationship, TextChunk
 from ..ollama_utils import OllamaClient, get_default_models
 from ..services import ChunkEnrichmentService
 
@@ -209,7 +209,7 @@ class TextChunkAdmin(admin.ModelAdmin):
         if not obj.pk:
             return "—"
 
-        persons = PersonMention.objects.filter(source_chunks=obj).order_by('generation', 'given_names', 'surname')
+        persons = Person.objects.filter(source_chunks=obj).order_by('generation', 'given_names', 'surname')
 
         if not persons:
             return format_html('<em style="color: #999;">No persons created yet</em>')
@@ -219,11 +219,11 @@ class TextChunkAdmin(admin.ModelAdmin):
         html.append('<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px;">')
 
         for person in persons:
-            person_url = reverse('admin:genealogy_personmention_change', args=[person.id])
+            person_url = reverse('admin:genealogy_person_change', args=[person.id])
             html.append(
                 f'<div style="padding: 8px; border: 1px solid #0066cc; border-radius: 4px; background: #e3f2fd;">'
                 f'<a href="{person_url}" target="_blank" style="font-weight: bold; color: #0066cc;">{person.full_name}</a><br>'
-                f'<small style="color: #666;">Gen {person.generation or "?"}</small>'
+                f'<small style="color: #666;">Gen {person.generation or "?"} | {person.genealogical_id}</small>'
                 f'</div>'
             )
 
@@ -238,13 +238,13 @@ class TextChunkAdmin(admin.ModelAdmin):
             return "—"
 
         # Get all persons from this chunk
-        persons = PersonMention.objects.filter(source_chunks=obj)
+        persons = Person.objects.filter(source_chunks=obj)
 
         if not persons:
             return format_html('<em style="color: #999;">No persons from this chunk</em>')
 
         # Get events for these persons
-        events = Event.objects.filter(mention__in=persons).select_related('mention', 'place').order_by('mention__given_names', 'event_type')
+        events = Event.objects.filter(person__in=persons).select_related('person').order_by('person__given_names', 'event_type')
 
         if not events:
             return format_html('<em style="color: #999;">No events created yet</em>')
@@ -255,10 +255,10 @@ class TextChunkAdmin(admin.ModelAdmin):
         # Group by person
         events_by_person = defaultdict(list)
         for event in events:
-            events_by_person[event.mention].append(event)
+            events_by_person[event.person].append(event)
 
         for person, person_events in events_by_person.items():
-            person_url = reverse('admin:genealogy_personmention_change', args=[person.id])
+            person_url = reverse('admin:genealogy_person_change', args=[person.id])
             html.append(f'<div style="margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">')
             html.append(f'<div style="font-weight: bold; margin-bottom: 5px;"><a href="{person_url}" target="_blank" style="color: #0066cc;">{person.full_name}</a></div>')
             html.append('<ul style="margin: 0; padding-left: 20px;">')
@@ -267,9 +267,11 @@ class TextChunkAdmin(admin.ModelAdmin):
                 event_url = reverse('admin:genealogy_event_change', args=[event.id])
                 parts = [f'<a href="{event_url}" target="_blank" style="color: #2e7d32;">{event.event_type}</a>']
                 if event.date:
-                    parts.append(f'{event.date}')
+                    parts.append(f'on {event.date}')
                 if event.place:
-                    parts.append(f'in {event.place.name}')
+                    parts.append(f'in {event.place}')
+                if event.description:
+                    parts.append(f'- {event.description}')
                 html.append(f'<li>{" ".join(parts)}</li>')
 
             html.append('</ul></div>')
@@ -279,12 +281,12 @@ class TextChunkAdmin(admin.ModelAdmin):
     created_events_display.short_description = "Created Events"  # type: ignore
 
     def created_relationships_display(self, obj: TextChunk) -> str:
-        """Display links to ParentChildRelationship records involving persons from this chunk"""
+        """Display links to Relationship records involving persons from this chunk"""
         if not obj.pk:
             return "—"
 
         # Get all persons from this chunk
-        persons = PersonMention.objects.filter(source_chunks=obj)
+        persons = Person.objects.filter(source_chunks=obj)
 
         if not persons:
             return format_html('<em style="color: #999;">No persons from this chunk</em>')
@@ -292,15 +294,15 @@ class TextChunkAdmin(admin.ModelAdmin):
         person_ids = [p.id for p in persons]
 
         # Get relationships where either parent or child is from this chunk
-        relationships = RelationshipMention.objects.filter(
-            child_mention_id__in=person_ids
-        ).select_related('child_mention', 'parent_mention').order_by('child_mention__given_names')
+        relationships = Relationship.objects.filter(
+            child_id__in=person_ids
+        ).select_related('child', 'parent').order_by('child__given_names')
 
-        parent_relationships = RelationshipMention.objects.filter(
-            parent_mention_id__in=person_ids
-        ).select_related('child_mention', 'parent_mention').exclude(
-            child_mention_id__in=person_ids  # Don't duplicate relationships already shown
-        ).order_by('child_mention__given_names')
+        parent_relationships = Relationship.objects.filter(
+            parent_id__in=person_ids
+        ).select_related('child', 'parent').exclude(
+            child_id__in=person_ids  # Don't duplicate relationships already shown
+        ).order_by('child__given_names')
 
         total_count = relationships.count() + parent_relationships.count()
 
@@ -315,14 +317,14 @@ class TextChunkAdmin(admin.ModelAdmin):
             html.append('<div style="margin-bottom: 15px;">')
             html.append('<h4 style="margin: 0 0 10px 0; color: #0066cc;">As Child</h4>')
             for rel in relationships:
-                rel_url = reverse('admin:genealogy_relationshipmention_change', args=[rel.id])
-                child_url = reverse('admin:genealogy_personmention_change', args=[rel.child_mention.id])
-                parent_url = reverse('admin:genealogy_personmention_change', args=[rel.parent_mention.id])
+                rel_url = reverse('admin:genealogy_relationship_change', args=[rel.id])
+                child_url = reverse('admin:genealogy_person_change', args=[rel.child.id])
+                parent_url = reverse('admin:genealogy_person_change', args=[rel.parent.id])
 
                 html.append(
                     f'<div style="padding: 8px; margin-bottom: 5px; border-left: 3px solid #4caf50; background: #f1f8f4;">'
-                    f'<a href="{child_url}" target="_blank" style="font-weight: bold; color: #0066cc;">{rel.child_mention.full_name}</a> '
-                    f'← <a href="{parent_url}" target="_blank" style="color: #666;">{rel.parent_mention.full_name}</a> '
+                    f'<a href="{child_url}" target="_blank" style="font-weight: bold; color: #0066cc;">{rel.child.full_name}</a> '
+                    f'← <a href="{parent_url}" target="_blank" style="color: #666;">{rel.parent.full_name}</a> '
                     f'<a href="{rel_url}" target="_blank" style="color: #999; font-size: 0.9em;">[edit]</a>'
                     f'</div>'
                 )
@@ -333,14 +335,14 @@ class TextChunkAdmin(admin.ModelAdmin):
             html.append('<div style="margin-bottom: 15px;">')
             html.append('<h4 style="margin: 0 0 10px 0; color: #ff9800;">As Parent</h4>')
             for rel in parent_relationships:
-                rel_url = reverse('admin:genealogy_relationshipmention_change', args=[rel.id])
-                child_url = reverse('admin:genealogy_personmention_change', args=[rel.child_mention.id])
-                parent_url = reverse('admin:genealogy_personmention_change', args=[rel.parent_mention.id])
+                rel_url = reverse('admin:genealogy_relationship_change', args=[rel.id])
+                child_url = reverse('admin:genealogy_person_change', args=[rel.child.id])
+                parent_url = reverse('admin:genealogy_person_change', args=[rel.parent.id])
 
                 html.append(
                     f'<div style="padding: 8px; margin-bottom: 5px; border-left: 3px solid #ff9800; background: #fff8f0;">'
-                    f'<a href="{parent_url}" target="_blank" style="font-weight: bold; color: #ff9800;">{rel.parent_mention.full_name}</a> '
-                    f'→ <a href="{child_url}" target="_blank" style="color: #666;">{rel.child_mention.full_name}</a> '
+                    f'<a href="{parent_url}" target="_blank" style="font-weight: bold; color: #ff9800;">{rel.parent.full_name}</a> '
+                    f'→ <a href="{child_url}" target="_blank" style="color: #666;">{rel.child.full_name}</a> '
                     f'<a href="{rel_url}" target="_blank" style="color: #999; font-size: 0.9em;">[edit]</a>'
                     f'</div>'
                 )

@@ -40,87 +40,95 @@ def load_examples():
 
 
 def build_extraction_prompt(chunk, examples=None):
-    """Build the unified example-based extraction prompt
+    """Build focused event extraction prompt
+
+    NOTE: We no longer extract people or relationships via LLM since we get those
+    from genealogical identifiers (more reliable). This prompt focuses ONLY on events.
 
     Args:
         chunk: TextChunk model instance
-        examples: Optional examples text (will load from file if not provided)
+        examples: Optional examples text (NOT USED - kept for backward compatibility)
 
     Returns:
         str: Complete prompt for LLM extraction
     """
-    if examples is None:
-        examples = load_examples()
-
     # Build genealogical context
     generation_info = f"Generation {chunk.generation_number}" if chunk.generation_number else "None"
     family_group = chunk.family_groups[0] if chunk.family_groups else "None"
 
-    # Show Phase 1 extracted data (deterministic extraction from chunking)
-    phase1_people = chunk.extracted_people if chunk.extracted_people else []
-    phase1_relationships = chunk.extracted_relationships if chunk.extracted_relationships else []
+    # Primary person this chunk is about
+    primary_person = chunk.subject if chunk.subject else "Unknown"
 
-    # Format Phase 1 data for display
-    if phase1_people:
-        phase1_people_str = ", ".join(phase1_people)
-    else:
-        phase1_people_str = "None"
-
-    if phase1_relationships:
-        phase1_rels_str = f"{len(phase1_relationships)} parent-child relationships"
-    else:
-        phase1_rels_str = "None"
-
-    return f"""Extract genealogical information from Dutch genealogy text.
+    return f"""Extract life events from genealogical text.
 
 {DUTCH_ABBREVIATIONS}
 
 {EVENT_TYPE_CODES}
-
-EXAMPLES:
-
-{examples}
 
 ======================================================================
 YOUR TASK
 ======================================================================
 
 CONTEXT:
+- Primary Person: {primary_person}
 - Generation: {generation_info}
 - Family Group: {family_group}
-
-ALREADY EXTRACTED (Phase 1):
-- People: {phase1_people_str}
-- Relationships: {phase1_rels_str}
 
 CONTENT TO EXTRACT FROM:
 {chunk.text_content}
 
 INSTRUCTIONS:
-1. Extract ONLY information explicitly stated in the content above
-2. Focus on:
-   - Life events: births, deaths, baptisms, burials, marriages
-   - Occupations: any profession, job, or occupation mentioned (use OCCU event type)
-   - Residences: places where people lived (use RESI event type)
-   - Partnerships: marriages and relationships
-   - Additional people mentioned
-3. If the content has NO genealogical facts (just narrative/acknowledgments), return "None" for all sections
-4. Do NOT copy the examples or Phase 1 data
-5. For occupations, extract the occupation as an OCCU event with the person's name
+1. Extract ONLY life events explicitly stated in the text
+2. Focus on events for the primary person: {primary_person}
+3. Event types to extract:
+   - BIRTH: Birth events (*, geb.)
+   - DEATH: Death events (+, †, overl.)
+   - BAPT: Baptism events (~, ged.)
+   - BURI: Burial events (begr.)
+   - MARR: Marriage events (x, tr., ondertr.)
+   - OCCU: Occupations/professions
+   - RESI: Residence/living places
+   - EDUC: Education (degrees, schools)
+   - IMMI/EMIG: Immigration/Emigration
+   - OTHER: Other significant life events
+4. For each event, extract:
+   - Person name (usually the primary person)
+   - Event type code
+   - Date (as written in text, or empty if not stated)
+   - Place (as written in text, or empty if not stated)
+5. If NO events are mentioned, return "None"
+6. Do NOT make up information - extract only what is explicitly stated
+
+CRITICAL WARNING - AVOID HALLUCINATION:
+- Do NOT copy events from the examples above
+- Do NOT infer events that are not in the text
+- If the person died as an infant, extract ONLY the birth and death events shown
+- Even if a person has the same name as someone in the examples, extract ONLY what is in THIS text
+- Short entries (one line) usually mean limited life events - extract only what you see
 
 OUTPUT FORMAT:
 
-PEOPLE:
-- List people mentioned (one per line, or "None")
-
-PARENT_CHILD:
-- PersonA|child|PersonB (or "None")
-
-PARTNERSHIPS:
-- PersonA|spouse|PersonB (or "None")
-
 EVENTS:
-- PersonName|EVENT_CODE|Date|Place (or "None")
+- PersonName|EVENT_CODE|Date|Place|Description (pipe-delimited, or "None")
+
+Field definitions:
+- Date: The date of the event (can be full date like "15.3.1850", year like "1860", or empty)
+- Place: Geographic location ONLY (city, address) - NOT for occupations
+- Description: Additional details - USE THIS for occupations
+
+CRITICAL for OCCU events:
+- Put the YEAR in the Date field (3rd position)
+- Leave Place EMPTY (4th position)
+- Put the OCCUPATION in Description field (5th position)
+
+Example output:
+EVENTS:
+- Jan van Zanten|BIRTH|15.3.1850|Amsterdam|
+- Jan van Zanten|MARR|12.6.1875|Rotterdam|
+- Jan van Zanten|OCCU|1860||boerenknecht
+- Jan van Zanten|OCCU|1872||werkman
+- Jan van Zanten|RESI|1875|lepenlaan 2, Bussum|
+- Jan van Zanten|DEATH|3.11.1920|Utrecht|
 
 Extract now:
 """
@@ -129,11 +137,14 @@ Extract now:
 def parse_extraction_output(output_text):
     """Parse the pipe-delimited output into structured data
 
+    NOTE: We now only extract events via LLM. People and relationships come from
+    genealogical identifiers during chunking (more reliable).
+
     Args:
         output_text: Raw text output from LLM
 
     Returns:
-        dict: Parsed extraction with keys: people, parent_child, partnerships, events
+        dict: Parsed extraction with keys: events (people, parent_child, partnerships are empty)
     """
     lines = output_text.strip().split('\n')
 
@@ -152,19 +163,10 @@ def parse_extraction_output(output_text):
             continue
 
         # Detect section headers
-        if line.startswith('PEOPLE:'):
-            current_section = 'people'
-            continue
-        elif line.startswith('PARENT_CHILD:'):
-            current_section = 'parent_child'
-            continue
-        elif line.startswith('PARTNERSHIPS:'):
-            current_section = 'partnerships'
-            continue
-        elif line.startswith('EVENTS:'):
+        if line.startswith('EVENTS:'):
             current_section = 'events'
             continue
-        elif line.startswith('INTERPRETATION:'):
+        elif line.startswith('INTERPRETATION:') or line.startswith('PEOPLE:') or line.startswith('PARENT_CHILD:') or line.startswith('PARTNERSHIPS:'):
             current_section = None
             continue
 
@@ -172,33 +174,8 @@ def parse_extraction_output(output_text):
         if line.lower() == 'none' or line.lower() == '- none':
             continue
 
-        # Parse based on current section
-        if current_section == 'people':
-            if line.startswith('-'):
-                result['people'].append(line[1:].strip())
-
-        elif current_section == 'parent_child':
-            if line.startswith('-'):
-                parts = line[1:].strip().split('|')
-                if len(parts) == 3:
-                    result['parent_child'].append({
-                        'person1': parts[0].strip(),
-                        'relationship_type': parts[1].strip(),
-                        'person2': parts[2].strip()
-                    })
-
-        elif current_section == 'partnerships':
-            if line.startswith('-'):
-                parts = line[1:].strip().split('|')
-                if len(parts) == 3:
-                    # Format: PersonA|spouse|PersonB
-                    result['partnerships'].append({
-                        'person1': parts[0].strip(),
-                        'relationship_type': parts[1].strip(),
-                        'person2': parts[2].strip()
-                    })
-
-        elif current_section == 'events':
+        # Parse events only
+        if current_section == 'events':
             if line.startswith('-'):
                 parts = line[1:].strip().split('|')
                 if len(parts) >= 2:
@@ -206,7 +183,8 @@ def parse_extraction_output(output_text):
                         'person': parts[0].strip() if len(parts) > 0 else '',
                         'event_type': parts[1].strip() if len(parts) > 1 else '',
                         'date': parts[2].strip() if len(parts) > 2 else '',
-                        'place': parts[3].strip() if len(parts) > 3 else ''
+                        'place': parts[3].strip() if len(parts) > 3 else '',
+                        'description': parts[4].strip() if len(parts) > 4 else ''
                     })
 
     return result
