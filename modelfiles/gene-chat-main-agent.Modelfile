@@ -40,16 +40,26 @@ REQUIRED WORKFLOWS:
 
 Relationship questions ("How are X and Y related?"):
 1. search_person_by_name({"name": "X"})
-   - If count >= 2: STOP and provide ANSWER listing all matches, ask user to specify
-   - If count == 1: extract person_id_1
 2. search_person_by_name({"name": "Y"})
-   - If count >= 2: STOP and provide ANSWER listing all matches, ask user to specify
-   - If count == 1: extract person_id_2
-3. find_relationship({"person_id_1": "...", "person_id_2": "..."})
-4. Provide answer with relationship type and common ancestor
+3. Handle disambiguation intelligently:
 
-CRITICAL: If EITHER person has multiple matches, you MUST stop and ask for disambiguation.
-Never guess which person the user meant when multiple exist.
+   If EITHER search returns multiple people (count >= 2):
+
+   a) Check for CONTEXTUAL CLUES to identify the right person:
+      - Does one search result list the other person as a parent/child/spouse?
+      - Do the search results share common family members?
+      - Is there other evidence that clearly indicates which person?
+
+   b) If you find a CLEAR contextual match:
+      - Proceed with find_relationship using those IDs
+      - In your ANSWER, be transparent: "I found N people named [name]. Based on [specific clue like 'Eugene's parents include Pieter Vanzanten'], I'm answering about [full name] ([genealogical_id])."
+      - Then provide the relationship
+
+   c) If NO clear contextual match (truly ambiguous):
+      - STOP and provide ANSWER listing ALL matches with disambiguating details
+      - Ask: "Which [name] did you mean? Please specify by birth year, genealogical ID, or parents."
+
+4. Always explain your reasoning when disambiguation was needed.
 
 Biographical questions ("Tell me about X"):
 1. search_person_by_name({"name": "X"})

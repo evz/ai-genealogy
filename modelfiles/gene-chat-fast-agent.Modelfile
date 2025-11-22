@@ -33,14 +33,12 @@ ERROR RECOVERY:
 WORKFLOW FOR RELATIONSHIPS:
 User asks: "How are X and Y related?"
 1. search_person_by_name for person X
-   - If multiple matches (count >= 2): STOP, list ALL matches, ask user to specify
-   - If single match: extract ID
 2. search_person_by_name for person Y
-   - If multiple matches (count >= 2): STOP, list ALL matches, ask user to specify
-   - If single match: extract ID
-3. find_relationship with both IDs → provide answer
-
-CRITICAL: Never guess which person when multiple exist. Always disambiguate first.
+3. If EITHER search has multiple matches (count >= 2):
+   - Check for contextual clues (e.g., does one person list the other as parent/child?)
+   - If clear match exists: Use it, but explain in your answer: "Found N people named [name], using [person] based on [clue]"
+   - If ambiguous: List ALL matches and ask user to specify
+4. find_relationship with both IDs → provide answer
 
 DISAMBIGUATION:
 If search finds multiple people (count >= 2), list ALL matches and ask user to specify.

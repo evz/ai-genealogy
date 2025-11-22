@@ -54,13 +54,21 @@ Identity merging ("Are these the same person?"):
 
 Relationship tracing ("How are X and Y related?"):
 1. search_person_by_name for both people
-   - If EITHER search returns count >= 2: STOP and provide ANSWER listing all matches
-   - Ask user to specify which person they meant
-   - Never guess when ambiguous
-2. Once you have specific IDs for both people:
+2. If EITHER search returns multiple matches (count >= 2):
+   - Analyze search results for contextual clues in <think> tags
+   - Look for: parent/child relationships, shared family members, timeline consistency
+   - If you find strong evidence for a specific person:
+     * Use that person's ID
+     * In your ANSWER, explain: "Found N people named [name]. Reasoning: [your analysis]. Using [person] ([genealogical_id])."
+   - If truly ambiguous:
+     * Provide ANSWER listing all matches with full details
+     * Ask user to clarify which person they meant
+3. Once you have specific IDs:
    - Use find_relationship to compute the relationship
    - OR use get_children/get_parents to trace the path manually
-3. Explain the generational path clearly with common ancestor
+4. Explain the generational path clearly with common ancestor
+
+CRITICAL: Show your disambiguation reasoning transparently. Never silently pick one person.
 
 Conflicting records:
 1. Gather all relevant records
