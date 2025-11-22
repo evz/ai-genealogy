@@ -9,18 +9,20 @@ from dateutil import parser as date_parser
 logger = logging.getLogger(__name__)
 
 
-def parse_genealogical_date(date_str: str) -> Tuple[Optional[date], bool]:
+def parse_genealogical_date(date_str: str, date_format: str = "DMY") -> Tuple[Optional[date], bool]:
     """
     Parse a date string from genealogical records into a date object.
 
     Handles various formats:
-    - ISO format: 1845-03-12, 1845-03, 1845
-    - European format: 15.3.1850, 3/15/1850
+    - ISO format: 1845-03-12, 1845-03, 1845 (always unambiguous)
+    - European format: 15.3.1850 (DMY)
+    - US format: 3/15/1850 (MDY)
     - Partial dates: "1845" (year only), "March 1845"
     - Approximate indicators: "ca. 1845", "~1850", "about 1845"
 
     Args:
         date_str: Date string to parse
+        date_format: Expected format for ambiguous dates - "DMY" (default) or "MDY"
 
     Returns:
         Tuple of (parsed_date, is_approximate)
@@ -45,8 +47,12 @@ def parse_genealogical_date(date_str: str) -> Tuple[Optional[date], bool]:
 
     # Try to parse with dateutil
     try:
+        # Configure dateutil based on date_format setting
+        # dayfirst=True for DMY (European), dayfirst=False for MDY (US)
+        dayfirst = (date_format == "DMY")
+
         # dateutil is very flexible and handles most formats
-        parsed = date_parser.parse(date_str, fuzzy=True, default=date(1, 1, 1))
+        parsed = date_parser.parse(date_str, fuzzy=True, dayfirst=dayfirst, default=date(1, 1, 1))
 
         # If only a year was provided, dateutil defaults to Jan 1
         # Check if the original string was just a year

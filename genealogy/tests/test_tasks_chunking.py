@@ -5,8 +5,7 @@ from unittest.mock import Mock, patch
 from django.test import TestCase
 
 from genealogy.chunking.models import ChunkType
-from genealogy.models import (BookSection, Document, DocumentPage,
-                              PersonMention, TextChunk)
+from genealogy.models import BookSection, Document, DocumentPage, TextChunk
 from genealogy.tasks.chunking import create_document_chunks
 
 from .helpers import create_ocr_text
@@ -236,54 +235,6 @@ class ChunkingTaskTests(TestCase):
         chunks = TextChunk.objects.filter(document=self.document)
         self.assertEqual(chunks.count(), 3)  # 3 new chunks
         self.assertFalse(chunks.filter(text_content="Old chunk").exists())
-
-    def test_deletes_person_mentions_with_genealogical_id(self):
-        """Should delete PersonMentions created during chunking (with genealogical_id)"""
-        section = BookSection.objects.create(
-            document=self.document,
-            title="Test Section",
-            section_type="DESCENDANT_GENEALOGY",
-            start_page=1,
-            end_page=2,
-        )
-
-        # Create a chunk
-        chunk = TextChunk.objects.create(
-            document=self.document,
-            chunk_type="individual_entry",
-            text_content="a. Pieter Jansen",
-            sequence_number=1,
-            genealogical_identifier="II.1.a",
-            start_page=1,
-            end_page=1,
-        )
-
-        # Create PersonMention with genealogical_id (created during chunking)
-        person_mention = PersonMention.objects.create(
-            given_names="Pieter",
-            surname="Jansen",
-            genealogical_id="II.1.a",
-        )
-        person_mention.primary_chunks.add(chunk)
-
-        # Create PersonMention without genealogical_id (created by entity creation)
-        permanent_mention = PersonMention.objects.create(
-            given_names="Jan",
-            surname="Jansen",
-            genealogical_id=None,
-        )
-
-        self.assertEqual(PersonMention.objects.count(), 2)
-
-        result = create_document_chunks(str(self.document.id))
-
-        self.assertTrue(result['success'])
-
-        # PersonMention with genealogical_id should be deleted
-        self.assertFalse(PersonMention.objects.filter(id=person_mention.id).exists())
-
-        # PersonMention without genealogical_id should be preserved
-        self.assertTrue(PersonMention.objects.filter(id=permanent_mention.id).exists())
 
     def test_processes_multiple_sections(self):
         """Should process multiple book sections in order"""

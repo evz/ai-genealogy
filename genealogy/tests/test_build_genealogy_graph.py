@@ -382,8 +382,8 @@ class TestBuildGenealogyGraph(TestCase):
         self.assertEqual(stats['people_created'], 1)
         self.assertEqual(Person.objects.count(), 1)
 
-    def test_partnership_not_created_when_second_parent_missing(self):
-        """Test Partnership is not created when second parent doesn't have genealogical ID"""
+    def test_partnership_created_with_minted_spouse_id(self):
+        """Test Partnership is created with minted ID when second parent doesn't have explicit genealogical ID"""
         # Create only first parent
         TextChunk.objects.create(
             document=self.document,
@@ -413,9 +413,18 @@ class TestBuildGenealogyGraph(TestCase):
         builder = GenealogyGraphBuilder(self.document)
         stats = builder.build()
 
-        # Assert partnership NOT created (second parent not in person_index)
-        self.assertEqual(stats['partnerships_created'], 0)
-        self.assertEqual(Partnership.objects.count(), 0)
+        # Assert partnership IS created with minted spouse ID
+        # We should acknowledge that someone existed, even if name is "Unknown Person"
+        self.assertEqual(stats['partnerships_created'], 1)
+        self.assertEqual(Partnership.objects.count(), 1)
+
+        # Verify the spouse was created with a minted ID
+        self.assertEqual(stats['people_created'], 3)  # Jan, Pieter, Unknown Person (minted)
+
+        # Check that Unknown Person has a minted ID
+        unknown_spouse = Person.objects.get(given_names="Unknown", surname="Person")
+        self.assertEqual(unknown_spouse.genealogical_id, "II.1.a.spouse1")
+        self.assertEqual(unknown_spouse.generation, 2)
 
     def test_relationship_not_created_when_parent_missing(self):
         """Test Relationship is not created when parent genealogical ID doesn't exist"""

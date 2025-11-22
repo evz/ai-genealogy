@@ -226,3 +226,192 @@ class TestGenealogyTools(TestCase):
         parent_names = person["parents"]
         self.assertIn("Pieter van Zanten", parent_names)
         self.assertIn("Maria de Vries", parent_names)
+
+
+@pytest.mark.django_db
+class TestFuzzyNameMatching(TestCase):
+    """Test fuzzy name matching variations for Dutch surnames"""
+
+    def setUp(self):
+        """Set up test data with various name spellings"""
+        self.tools = GenealogyTools()
+
+        # Create people with various Dutch surname spellings
+        self.pieter_spaced = Person.objects.create(
+            genealogical_id="II.1.a",
+            given_names="Pieter",
+            surname="van Zanten",
+            generation=2
+        )
+
+        self.jan_nospace = Person.objects.create(
+            genealogical_id="II.1.b",
+            given_names="Jan",
+            surname="VanZanten",  # No space, capitalized
+            generation=2
+        )
+
+        self.willem_lower = Person.objects.create(
+            genealogical_id="II.1.c",
+            given_names="Willem",
+            surname="vanzanten",  # No space, lowercase
+            generation=2
+        )
+
+        self.maria_de = Person.objects.create(
+            genealogical_id="II.2.a",
+            given_names="Maria",
+            surname="de Vries",
+            generation=2
+        )
+
+        self.anna_der = Person.objects.create(
+            genealogical_id="II.3.a",
+            given_names="Anna",
+            surname="van der Berg",
+            generation=2
+        )
+
+    def test_generate_name_variations_van_zanten(self):
+        """Test name variation generation for 'van Zanten'"""
+        variations = self.tools._generate_name_variations("van Zanten")
+
+        # Should generate both spaced and non-spaced versions
+        self.assertIn("van zanten", variations)
+        self.assertIn("vanzanten", variations)
+        self.assertEqual(len(variations), 2)
+
+    def test_generate_name_variations_vanzanten(self):
+        """Test name variation generation for 'vanzanten' (no space)"""
+        variations = self.tools._generate_name_variations("vanzanten")
+
+        # Should generate both versions
+        self.assertIn("vanzanten", variations)
+        self.assertIn("van zanten", variations)
+        self.assertEqual(len(variations), 2)
+
+    def test_generate_name_variations_de_vries(self):
+        """Test name variation generation for 'de Vries'"""
+        variations = self.tools._generate_name_variations("de Vries")
+
+        self.assertIn("de vries", variations)
+        self.assertIn("devries", variations)
+
+    def test_generate_name_variations_van_der_berg(self):
+        """Test name variation generation for 'van der Berg'"""
+        variations = self.tools._generate_name_variations("van der Berg")
+
+        # Should generate multiple variations
+        self.assertIn("van der berg", variations)
+        self.assertIn("vanderberg", variations)
+        # Should also handle partial space removal
+        self.assertTrue(any("vander" in v for v in variations))
+
+    def test_generate_name_variations_full_name(self):
+        """Test variation generation for full name with prefix"""
+        variations = self.tools._generate_name_variations("Bessel van Zanten")
+
+        # Should include variations
+        self.assertIn("bessel van zanten", variations)
+        self.assertIn("besselvanzanten", variations)
+        self.assertIn("bessel vanzanten", variations)
+
+    def test_search_finds_spaced_spelling(self):
+        """Test that searching 'van Zanten' finds person with spaced surname"""
+        result = self.tools.search_person_by_name("van Zanten", max_results=10)
+
+        # Should find Pieter with "van Zanten"
+        names = [p["display_name"] for p in result["people"]]
+        self.assertIn("Pieter van Zanten", names)
+
+    def test_search_finds_nospace_spelling(self):
+        """Test that searching 'vanzanten' finds person with no-space surname"""
+        result = self.tools.search_person_by_name("vanzanten", max_results=10)
+
+        # Should find Jan with "VanZanten"
+        names = [p["display_name"] for p in result["people"]]
+        self.assertIn("Jan VanZanten", names)
+
+    def test_search_spaced_finds_nospace(self):
+        """Test that searching 'van Zanten' (spaced) also finds 'VanZanten' (no space)"""
+        result = self.tools.search_person_by_name("van Zanten", max_results=10)
+
+        # Should find ALL variations
+        names = [p["display_name"] for p in result["people"]]
+        self.assertIn("Pieter van Zanten", names)
+        self.assertIn("Jan VanZanten", names)
+        self.assertIn("Willem vanzanten", names)
+
+        # Should find at least 3 people
+        self.assertGreaterEqual(result["count"], 3)
+
+    def test_search_nospace_finds_spaced(self):
+        """Test that searching 'vanzanten' (no space) also finds 'van Zanten' (spaced)"""
+        result = self.tools.search_person_by_name("vanzanten", max_results=10)
+
+        # Should find ALL variations
+        names = [p["display_name"] for p in result["people"]]
+        self.assertIn("Pieter van Zanten", names)
+        self.assertIn("Jan VanZanten", names)
+        self.assertIn("Willem vanzanten", names)
+
+        # Should find at least 3 people
+        self.assertGreaterEqual(result["count"], 3)
+
+    def test_search_equivalence(self):
+        """Test that 'van Zanten' and 'vanzanten' return same results"""
+        result1 = self.tools.search_person_by_name("van Zanten", max_results=10)
+        result2 = self.tools.search_person_by_name("vanzanten", max_results=10)
+
+        # Should find same number of people
+        self.assertEqual(result1["count"], result2["count"])
+
+        # Should find same people
+        ids1 = set([p["id"] for p in result1["people"]])
+        ids2 = set([p["id"] for p in result2["people"]])
+        self.assertEqual(ids1, ids2)
+
+    def test_search_de_vries_variations(self):
+        """Test fuzzy matching for 'de Vries'"""
+        result1 = self.tools.search_person_by_name("de Vries", max_results=10)
+        result2 = self.tools.search_person_by_name("devries", max_results=10)
+
+        # Both should find Maria
+        names1 = [p["display_name"] for p in result1["people"]]
+        names2 = [p["display_name"] for p in result2["people"]]
+
+        self.assertIn("Maria de Vries", names1)
+        self.assertIn("Maria de Vries", names2)
+
+    def test_case_insensitive_search(self):
+        """Test that search is case insensitive"""
+        result1 = self.tools.search_person_by_name("VAN ZANTEN", max_results=10)
+        result2 = self.tools.search_person_by_name("van zanten", max_results=10)
+        result3 = self.tools.search_person_by_name("Van Zanten", max_results=10)
+
+        # All should find same people
+        self.assertEqual(result1["count"], result2["count"])
+        self.assertEqual(result2["count"], result3["count"])
+
+    def test_search_by_birth_year_with_fuzzy_name(self):
+        """Test that birth year search also uses fuzzy matching"""
+        from datetime import date
+
+        # Add birth event to Jan VanZanten
+        Event.objects.create(
+            person=self.jan_nospace,
+            event_type="BIRT",
+            date=date(1850, 1, 1),
+            date_original="1850-01-01"
+        )
+
+        # Search with spaced version for person with non-spaced surname
+        result = self.tools.search_by_birth_year(
+            name="van Zanten",
+            birth_year_min=1849,
+            birth_year_max=1851
+        )
+
+        # Should find Jan even though his surname is "VanZanten"
+        names = [p["display_name"] for p in result["people"]]
+        self.assertIn("Jan VanZanten", names)

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class OllamaClient:
     """Client for interacting with Ollama API"""
 
-    def __init__(self, host: str | None = None, port: int | None = None, timeout: int = 120):
+    def __init__(self, host: str | None = None, port: int | None = None, timeout: int = 600):
         self.host = host or os.getenv("OLLAMA_HOST", "localhost")
         self.port = port or int(os.getenv("OLLAMA_PORT", "11434"))
         self.base_url = f"http://{self.host}:{self.port}"
@@ -178,6 +178,6 @@ class OllamaClient:
 def get_default_models() -> dict[str, str]:
     """Get default model configuration from environment"""
     return {
-        "llm_model": os.getenv("OLLAMA_LLM_MODEL", "llama3.1:70b"),
+        "llm_model": os.getenv("OLLAMA_LLM_MODEL", "gene-chat-main"),
         "embedding_model": os.getenv("OLLAMA_EMBEDDING_MODEL", "zylonai/multilingual-e5-large:latest"),
     }

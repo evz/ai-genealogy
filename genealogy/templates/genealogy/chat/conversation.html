@@ -1,0 +1,215 @@
+{% extends "genealogy/base.html" %}
+
+{% block content %}
+<div class="flex h-screen bg-gray-50" x-data="{ isTyping: false }">
+  <!-- Sidebar: Conversation List -->
+  <div class="w-64 bg-white border-r border-gray-200 overflow-y-auto">
+    <div class="p-4 border-b">
+      <h1 class="text-xl font-bold text-gray-800">Genealogy Chat</h1>
+      <a href="{% url 'chat_new' %}"
+         class="mt-3 w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 block text-center">
+        + New Conversation
+      </a>
+    </div>
+
+    <div class="p-2">
+      <a href="{% url 'chat_index' %}"
+         class="block p-3 rounded-lg hover:bg-gray-100 mb-2 text-sm text-gray-600">
+        ← Back to all conversations
+      </a>
+    </div>
+  </div>
+
+  <!-- Main Chat Area -->
+  <div class="flex-1 flex flex-col">
+    <!-- Header -->
+    <div class="bg-white border-b border-gray-200 p-4">
+      <h2 class="text-lg font-semibold text-gray-800">
+        {{ conversation.title|default:"New Conversation" }}
+      </h2>
+    </div>
+
+    <!-- Messages Container -->
+    <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-4">
+      {% include "genealogy/chat/partials/messages.html" %}
+    </div>
+
+    <!-- Typing Indicator -->
+    <div x-show="isTyping" class="px-4 py-2 text-gray-500 text-sm">
+      <span class="inline-flex items-center">
+        <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        Searching and thinking...
+      </span>
+    </div>
+
+    <!-- Input Area -->
+    <div class="bg-white border-t border-gray-200 p-4">
+      <form id="messageForm" class="flex gap-2" @submit.prevent="sendMessage">
+        {% csrf_token %}
+        <input type="text" id="messageInput" name="message"
+               placeholder="Ask about your genealogy..."
+               class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+               required />
+        <button type="submit"
+                class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+          Send
+        </button>
+      </form>
+
+      <div class="mt-2 text-xs text-gray-500 text-center">
+        Powered by hybrid RAG+RRF retrieval with Ollama LLM
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function sendMessage(event) {
+  const form = document.getElementById('messageForm');
+  const input = document.getElementById('messageInput');
+  const message = input.value.trim();
+
+  if (!message) return;
+
+  const messagesDiv = document.getElementById('messages');
+
+  // Add user message immediately
+  appendMessage('user', message);
+
+  // Clear input
+  input.value = '';
+
+  // Create assistant message placeholder
+  const assistantDiv = appendMessage('assistant', '');
+  const contentSpan = assistantDiv.querySelector('.message-content');
+
+  // Show typing indicator
+  Alpine.store('isTyping', true);
+
+  // Connect to SSE endpoint
+  const formData = new FormData();
+  formData.append('message', message);
+  formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+  fetch('{% url "chat_stream" conversation.id %}', {
+    method: 'POST',
+    body: formData
+  }).then(response => {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+
+    function processText({ done, value }) {
+      if (done) {
+        return;
+      }
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n');
+
+      lines.forEach(line => {
+        if (line.startsWith('data: ')) {
+          const data = JSON.parse(line.slice(6));
+
+          if (data.status === 'agent_starting') {
+            contentSpan.innerHTML = '<em class="text-gray-500">🤖 Starting agentic search...</em>';
+          }
+          else if (data.status === 'model_selected') {
+            // Display which model was selected
+            const modelName = data.model.replace('gene-chat-', '').replace('gene-', '');
+            const modelLabel = modelName === 'fast' ? '⚡ Fast Model'
+                             : modelName === 'main' ? '🧠 Main Model'
+                             : modelName === 'reasoner' ? '🔬 Reasoning Model'
+                             : data.model;
+            console.log(`Model selected: ${data.model}`);
+            contentSpan.innerHTML += `<div class="text-xs text-blue-600 mb-2">${modelLabel}</div>`;
+          }
+          else if (data.status === 'thinking_start') {
+            contentSpan.innerHTML = `<div class="mb-2"><strong class="text-gray-700">🧠 Thinking (iteration ${data.iteration}/${data.max_iterations}):</strong></div><div class="thinking-content text-sm text-gray-600 italic bg-gray-50 p-2 rounded"></div>`;
+          }
+          else if (data.status === 'thinking_token') {
+            // Stream thinking tokens in real-time
+            const thinkingContent = contentSpan.querySelector('.thinking-content');
+            if (thinkingContent) {
+              thinkingContent.textContent += data.token;
+              messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+          }
+          else if (data.status === 'thinking_end') {
+            // Thinking section complete
+            const thinkingContent = contentSpan.querySelector('.thinking-content');
+            if (thinkingContent) {
+              thinkingContent.classList.add('mb-3');
+            }
+          }
+          else if (data.status === 'tool_call') {
+            const argsStr = JSON.stringify(data.arguments);
+            contentSpan.innerHTML += `<div class="text-xs text-gray-600 mt-1">🔧 Calling ${data.tool}(${argsStr})<br><em>${data.reasoning}</em></div>`;
+          }
+          else if (data.status === 'tool_result') {
+            const resultPreview = JSON.stringify(data.result).substring(0, 100);
+            contentSpan.innerHTML += `<div class="text-xs text-gray-500 mt-1">✅ Result: ${resultPreview}...</div>`;
+          }
+          else if (data.status === 'retrieving') {
+            contentSpan.innerHTML = '<em class="text-gray-500">🔍 Searching documents...</em>';
+          }
+          else if (data.status === 'retrieved') {
+            contentSpan.innerHTML = `<em class="text-gray-500">📚 Found ${data.chunks_count} relevant chunks. Generating answer...</em>`;
+          }
+          else if (data.status === 'generating') {
+            contentSpan.innerHTML = '';
+          }
+          else if (data.token) {
+            fullText += data.token;
+            contentSpan.textContent = fullText;
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+          }
+          else if (data.done) {
+            if (data.error) {
+              contentSpan.innerHTML = `<span class="text-red-600">Error: ${data.error}</span>`;
+            }
+            // Reload page to show persisted messages
+            window.location.reload();
+          }
+        }
+      });
+
+      return reader.read().then(processText);
+    }
+
+    return reader.read().then(processText);
+  });
+}
+
+function appendMessage(role, content) {
+  const messagesDiv = document.getElementById('messages');
+
+  const messageDiv = document.createElement('div');
+  if (role === 'user') {
+    messageDiv.className = 'flex justify-end';
+  }
+
+  const bubbleDiv = document.createElement('div');
+  bubbleDiv.className = `max-w-3xl rounded-lg p-4 shadow-sm ${
+    role === 'user'
+      ? 'bg-blue-600 text-white'
+      : 'bg-white border border-gray-200'
+  }`;
+
+  const contentSpan = document.createElement('div');
+  contentSpan.className = 'message-content';
+  contentSpan.textContent = content;
+
+  bubbleDiv.appendChild(contentSpan);
+  messageDiv.appendChild(bubbleDiv);
+  messagesDiv.appendChild(messageDiv);
+
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+  return messageDiv;
+}
+</script>
+{% endblock %}

@@ -187,9 +187,9 @@ def persist_extracted_entities(self, document_id: str):
                         stats['events_skipped_no_person'] += 1
                         continue
 
-                    # Parse the date string
+                    # Parse the date string using document's date format
                     date_str = event_data.get('date', '')
-                    parsed_date, is_approximate = parse_genealogical_date(date_str)
+                    parsed_date, is_approximate = parse_genealogical_date(date_str, document.date_format)
 
                     # Create Event record
                     event = Event.objects.create(

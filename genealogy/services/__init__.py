@@ -8,9 +8,21 @@ code organization.
 from .chunk_enrichment import ChunkEnrichmentService
 from .chunking_service import ChunkingService
 from .extraction_service import ExtractionService
+from .model_router import ModelRouter
+from .routing_strategies import (
+    KeywordBasedStrategy,
+    AgentOnlyStrategy,
+    AlwaysFastStrategy,
+    AlwaysMainStrategy,
+)
 
 __all__ = [
     'ChunkEnrichmentService',
     'ChunkingService',
     'ExtractionService',
+    'ModelRouter',
+    'KeywordBasedStrategy',
+    'AgentOnlyStrategy',
+    'AlwaysFastStrategy',
+    'AlwaysMainStrategy',
 ]

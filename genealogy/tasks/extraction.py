@@ -118,19 +118,18 @@ def extract_entities_from_chunks(self, document_id: str):  # noqa: ARG001
 
             # Enrich successfully extracted chunks with embeddings and DM codes
             if section_processed > 0:
-                logger.info(f"Enriching {section_processed} extracted chunks in section '{section.title}'")
+                logger.info(f"Enriching chunks in section '{section.title}'")
 
-                # Get chunks that were just successfully extracted
-                extracted_chunks = document.text_chunks.filter(
+                # Get ALL chunks in this section (not just those with entity extraction)
+                # This ensures family headers, generation headers, etc. also get embeddings for RAG
+                all_section_chunks = document.text_chunks.filter(
                     start_page__gte=section.start_page,
                     start_page__lte=section.end_page,
-                    entities_extracted=True,
-                    **strategy.get_chunk_filter()
                 ).order_by("sequence_number")
 
                 # Enrich with embeddings and DM codes
                 enrichment_result = enrichment_service.enrich_chunks_batch(
-                    chunks=extracted_chunks,
+                    chunks=all_section_chunks,
                     embedding_model=embedding_model,
                     generate_embedding=True,
                     generate_dm_codes=True,

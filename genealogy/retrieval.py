@@ -15,9 +15,15 @@ from typing import Dict, List, Optional
 from abydos.phonetic import DaitchMokotoff
 from django.db import connection
 
+from .models import TextChunk
 from .ollama_utils import OllamaClient
 
 logger = logging.getLogger(__name__)
+
+
+class NoEmbeddingsError(Exception):
+    """Raised when attempting RAG queries but no embeddings exist in the database."""
+    pass
 
 
 class HybridRetriever:
@@ -52,10 +58,22 @@ class HybridRetriever:
 
         Returns:
             List of dicts with chunk data, anchor info, and RRF scores
+
+        Raises:
+            NoEmbeddingsError: If no chunks with embeddings exist in database
         """
         # Handle empty query
         if not query or not query.strip():
             return []
+
+        # Validate that embeddings exist
+        chunks_with_embeddings = TextChunk.objects.exclude(embedding=None).count()
+        if chunks_with_embeddings == 0:
+            total_chunks = TextChunk.objects.count()
+            raise NoEmbeddingsError(
+                f"No embeddings found in database. {total_chunks} chunks exist but none have embeddings. "
+                "Please run embedding generation before attempting RAG queries."
+            )
 
         # 1. Prepare query features
         query_features = self._extract_query_features(query)

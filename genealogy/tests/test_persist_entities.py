@@ -78,12 +78,12 @@ class PersistExtractedEntitiesTestCase(TestCase):
         self.assertEqual(events.count(), 2)
 
         birth_event = events.filter(event_type='BIRTH').first()
-        self.assertEqual(birth_event.date, "15.3.1850")
+        self.assertEqual(str(birth_event.date), "1850-03-15")
         self.assertEqual(birth_event.place, "Amsterdam")
         self.assertEqual(birth_event.source_chunk, chunk)
 
         death_event = events.filter(event_type='DEATH').first()
-        self.assertEqual(death_event.date, "3.11.1920")
+        self.assertEqual(str(death_event.date), "1920-11-03")
         self.assertEqual(death_event.place, "Utrecht")
         self.assertEqual(death_event.source_chunk, chunk)
 
@@ -104,7 +104,8 @@ class PersistExtractedEntitiesTestCase(TestCase):
                     "person": "Jan van Zanten",
                     "event_type": "OCCU",
                     "date": "",
-                    "place": "onderwijzer"
+                    "place": "",
+                    "description": "onderwijzer"
                 }
             ]
         )
@@ -115,8 +116,9 @@ class PersistExtractedEntitiesTestCase(TestCase):
         self.assertEqual(result['events_created'], 1)
 
         event = Event.objects.get(person=self.person_ix_5_a, event_type='OCCU')
-        self.assertEqual(event.place, "onderwijzer")
-        self.assertEqual(event.date, "")
+        self.assertEqual(event.description, "onderwijzer")
+        self.assertEqual(event.place, "")
+        self.assertIsNone(event.date)
 
     def test_persist_events_no_person_match(self):
         """Test that events without matching person are skipped"""

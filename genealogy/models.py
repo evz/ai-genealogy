@@ -20,6 +20,11 @@ class Document(models.Model):
         ("eng+nld", "English + Dutch"),
     ]
 
+    DATE_FORMAT_CHOICES = [
+        ("DMY", "Day-Month-Year (European: 15.3.1850)"),
+        ("MDY", "Month-Day-Year (US: 3/15/1850)"),
+    ]
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255)
     languages = models.CharField(
@@ -27,6 +32,12 @@ class Document(models.Model):
         choices=LANGUAGE_CHOICES,
         default="eng+nld",
         help_text="Languages for OCR processing",
+    )
+    date_format = models.CharField(
+        max_length=3,
+        choices=DATE_FORMAT_CHOICES,
+        default="DMY",
+        help_text="Expected date format in this document for parsing ambiguous dates",
     )
     upload_date = models.DateTimeField(default=timezone.now)
     ocr_completed = models.BooleanField(default=False)
@@ -620,3 +631,55 @@ class TextChunk(models.Model):
     def __str__(self):
         chunk_preview = self.text_content[:50] + "..." if len(self.text_content) > 50 else self.text_content
         return f"{self.document.title} - Chunk {self.sequence_number}: {chunk_preview}"
+
+
+class Conversation(models.Model):
+    """A chat conversation with the genealogy assistant"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # Session-based for anonymous users (future: add user FK for auth)
+    session_key = models.CharField(max_length=40, null=True, blank=True, db_index=True)
+
+    # Optional: filter search to specific documents
+    document_filter = models.ManyToManyField(
+        Document,
+        blank=True,
+        related_name='conversations',
+        help_text="Limit search to these documents (empty = search all)"
+    )
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return self.title or f'Conversation {self.id}'
+
+
+class Message(models.Model):
+    """A single message in a conversation"""
+
+    ROLE_CHOICES = [
+        ('user', 'User'),
+        ('assistant', 'Assistant'),
+        ('system', 'System'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # Metadata for retrieval (assistant messages only)
+    retrieved_chunks = models.JSONField(default=list, blank=True)
+    retrieval_metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"{self.role}: {self.content[:50]}"

@@ -36,8 +36,8 @@ class Command(BaseCommand):
         parser.add_argument(
             "--model",
             type=str,
-            default="llama3.1:70b",
-            help="LLM model to use for answering (default: llama3.1:70b)",
+            default="gene-chat-main",
+            help="LLM model to use for answering (default: gene-chat-main)",
         )
         parser.add_argument(
             "--context-only",
