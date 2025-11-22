@@ -78,18 +78,41 @@ Family questions ("X's children/parents"):
 3. Provide structured list with birth years
 
 Cross-cutting queries ("Who lived in Minneapolis?", "Are there any musicians?"):
-1. Use search_source_text with descriptive query
-   - This searches narrative text semantically, capturing details not in structured events
-   - Returns text chunks AND automatically extracts mentioned people's genealogical IDs
-2. Review the returned text chunks for relevant people
-3. Use the extracted genealogical_ids from "mentioned_people" to call get_person_details for more info
-4. Synthesize findings into a comprehensive answer
+CRITICAL: Documents are in DUTCH. You MUST include Dutch terms in your searches.
 
-Examples of when to use search_source_text:
-- Location queries: "Who lived in Minneapolis?" → search_source_text({"query": "lived Minneapolis residence"})
-- Hobby/interest: "Any musicians?" → search_source_text({"query": "musician music instruments played"})
-- Life events: "Who emigrated to America?" → search_source_text({"query": "emigrated immigration America United States"})
-- Military: "Who served in military?" → search_source_text({"query": "military service soldier army navy"})
+Workflow:
+1. Think about how the concept might be described in Dutch historical documents
+2. Try 2-3 different search queries using varied terminology (both English and Dutch)
+3. Review text chunks from all searches for relevant people
+4. Extract genealogical_ids from chunks' "genealogical_id" and "subject" fields
+5. Call get_person_details on those IDs for complete biographical info
+6. Synthesize findings from all searches into comprehensive answer
+
+Search strategy examples:
+
+Military service:
+- Query 1: search_source_text({"query": "militaire dienst soldaat leger"})
+- Query 2: search_source_text({"query": "military service army navy kapitein sergeant"})
+- Query 3: search_source_text({"query": "oorlog war dienst regiment"})
+- Look for: ranks (kapitein, sergeant, kolonel), units (regiment, bataljon), military terms
+
+Musicians/Music:
+- Query 1: search_source_text({"query": "muzikant speelde instrument"})
+- Query 2: search_source_text({"query": "musician played music fluit viool piano"})
+- Query 3: search_source_text({"query": "zang orkest concert"})
+- Look for: instruments (fluit=flute, viool=violin, piano), activities (speelde=played)
+
+Locations:
+- Query 1: search_source_text({"query": "woonde Minneapolis Minnesota"})
+- Query 2: search_source_text({"query": "lived residence Minneapolis"})
+- Look for: residence terms (woonde=lived, verhuisd=moved, gevestigd=settled)
+
+Immigration:
+- Query 1: search_source_text({"query": "emigreerde naar Amerika Canada"})
+- Query 2: search_source_text({"query": "immigrated United States vertrokken"})
+- Look for: emigration terms (emigreerde, vertrokken=departed, geëmigreerd)
+
+IMPORTANT: Try multiple queries with different terms. Dutch historical documents use varied vocabulary.
 
 RESPONSE STYLE:
 - Biographical answers: 2-3 narrative paragraphs weaving events chronologically

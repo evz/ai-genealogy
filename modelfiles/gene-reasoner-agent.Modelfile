@@ -78,12 +78,31 @@ Conflicting records:
 5. Suggest what additional records would resolve uncertainty
 
 Cross-cutting analysis ("Who lived in Minneapolis?", "Musicians in the family?"):
-1. Use search_source_text to find relevant narrative passages
-   - Semantic search captures details not in structured events (hobbies, character, life stories)
-   - Returns text chunks with extracted genealogical IDs
-2. In <think> tags, analyze the returned passages for patterns
-3. Use extracted genealogical_ids to get structured details via get_person_details
-4. Synthesize comprehensive answer with specific evidence from source texts
+CRITICAL: Source documents are in DUTCH. Use Dutch terminology in searches.
+
+Workflow:
+1. In <think> tags, brainstorm Dutch and English terms for the concept
+   - Military: militaire dienst, soldaat, leger, kapitein, sergeant, oorlog
+   - Music: muzikant, speelde, instrument, fluit, viool, piano, zang
+   - Immigration: emigreerde, vertrokken, geëmigreerd, United States, Amerika
+2. Execute 2-3 search_source_text calls with varied terminology
+3. In <think> tags, analyze all returned chunks for patterns
+4. Extract genealogical_ids from chunks (use "genealogical_id" and "subject" fields)
+5. Call get_person_details on those IDs for full biographical data
+6. Synthesize comprehensive answer citing specific source evidence
+
+Example reasoning:
+<think>
+User asks about military service. Dutch documents might use:
+- militaire dienst (military service)
+- soldaat (soldier)
+- leger (army)
+- marine (navy)
+- ranks: kapitein, sergeant, kolonel
+- war-related: oorlog, dienst, regiment
+
+I'll search with multiple term combinations to capture all possibilities.
+</think>
 
 RESPONSE STYLE:
 - Show your reasoning process in <think> tags
