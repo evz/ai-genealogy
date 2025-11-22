@@ -74,6 +74,14 @@ class AgentExecutor:
                 "person_id_1": "UUID or genealogical_id of first person. NEVER use person's name.",
                 "person_id_2": "UUID or genealogical_id of second person. NEVER use person's name."
             }
+        },
+        {
+            "name": "search_source_text",
+            "description": "Search genealogical source texts using semantic search. Use this for cross-cutting queries that aren't about specific people, such as: 'Who lived in Minneapolis?', 'Are there any musicians?', 'Who served in the military?', 'Tell me about people who emigrated to America'. Returns narrative text chunks with relevance scores AND automatically extracts mentioned people with their genealogical IDs, making it easy to follow up with get_person_details.",
+            "parameters": {
+                "query": "Search query describing what you're looking for (e.g., 'musicians', 'lived in Minneapolis', 'military service')",
+                "max_results": "Maximum number of text chunks to return (default 10)"
+            }
         }
     ]
 
@@ -498,8 +506,9 @@ Respond with either TOOL_CALL or ANSWER:"""
         """
         response = response.strip()
 
-        # Check if it's a tool call
-        if response.startswith("TOOL_CALL:"):
+        # Check if TOOL_CALL appears anywhere in the response (not just at start)
+        # LLMs sometimes add thinking/reasoning text before the tool call
+        if "TOOL_CALL:" in response:
             lines = response.split("\n")
             tool_name = None
             arguments = {}
@@ -533,13 +542,16 @@ Respond with either TOOL_CALL or ANSWER:"""
                     "reasoning": reasoning
                 }
 
-        # Check if it's an answer
-        if response.startswith("ANSWER:"):
-            answer = response.replace("ANSWER:", "").strip()
-            return {
-                "type": "answer",
-                "answer": answer
-            }
+        # Check if ANSWER appears anywhere in the response
+        if "ANSWER:" in response:
+            # Find the line that starts with ANSWER:
+            for line in response.split("\n"):
+                if line.startswith("ANSWER:"):
+                    answer = response[response.index("ANSWER:") + len("ANSWER:"):].strip()
+                    return {
+                        "type": "answer",
+                        "answer": answer
+                    }
 
         # Default: treat as final answer
         return {

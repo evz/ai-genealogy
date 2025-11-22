@@ -157,6 +157,50 @@ class OllamaClient:
             logger.exception(f"Error generating text: {e}")
             return
 
+    def generate_conversation_title(self, user_query: str, model: str = "llama3.1:8b") -> str:
+        """
+        Generate a short, descriptive title for a conversation based on the first user query.
+
+        Args:
+            user_query: The first message from the user
+            model: Model to use for title generation (default: fast model)
+
+        Returns:
+            A 3-5 word title, or a truncated query if generation fails
+        """
+        prompt = f"""Generate a short, descriptive title (3-5 words maximum) for this genealogy question.
+The title should capture the main topic or person being asked about.
+
+Question: {user_query}
+
+Title (3-5 words only, no quotes):"""
+
+        try:
+            title = self.generate(
+                model=model,
+                prompt=prompt,
+                options={
+                    'temperature': 0.3,
+                    'num_predict': 20,  # Keep it short
+                }
+            )
+
+            if title:
+                # Clean up the title
+                title = title.strip()
+                # Remove quotes if present
+                title = title.strip('"\'')
+                # Truncate if too long
+                if len(title) > 60:
+                    title = title[:57] + "..."
+                return title
+
+        except Exception as e:
+            logger.warning(f"Failed to generate conversation title: {e}")
+
+        # Fallback: use first 50 chars of query
+        return user_query[:50] + ("..." if len(user_query) > 50 else "")
+
     def embed(self, model: str, input_text: str) -> list[float] | None:
         """Generate embeddings using specified model"""
         try:

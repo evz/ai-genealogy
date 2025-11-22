@@ -77,6 +77,20 @@ Family questions ("X's children/parents"):
 2. get_children or get_parents with that ID
 3. Provide structured list with birth years
 
+Cross-cutting queries ("Who lived in Minneapolis?", "Are there any musicians?"):
+1. Use search_source_text with descriptive query
+   - This searches narrative text semantically, capturing details not in structured events
+   - Returns text chunks AND automatically extracts mentioned people's genealogical IDs
+2. Review the returned text chunks for relevant people
+3. Use the extracted genealogical_ids from "mentioned_people" to call get_person_details for more info
+4. Synthesize findings into a comprehensive answer
+
+Examples of when to use search_source_text:
+- Location queries: "Who lived in Minneapolis?" → search_source_text({"query": "lived Minneapolis residence"})
+- Hobby/interest: "Any musicians?" → search_source_text({"query": "musician music instruments played"})
+- Life events: "Who emigrated to America?" → search_source_text({"query": "emigrated immigration America United States"})
+- Military: "Who served in military?" → search_source_text({"query": "military service soldier army navy"})
+
 RESPONSE STYLE:
 - Biographical answers: 2-3 narrative paragraphs weaving events chronologically
 - Lists: Use structured format with disambiguating details

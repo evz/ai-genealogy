@@ -220,6 +220,18 @@ def stream_message(request, conversation_id):
                     }
                 )
 
+                # Generate conversation title if this is the first message
+                if conversation.title == "New Conversation":
+                    try:
+                        from genealogy.ollama_utils import OllamaClient
+                        ollama = OllamaClient()
+                        new_title = ollama.generate_conversation_title(user_message)
+                        conversation.title = new_title
+                        conversation.save(update_fields=['title'])
+                        logger.info(f"Generated title for conversation {conversation.id}: {new_title}")
+                    except Exception as e:
+                        logger.warning(f"Failed to generate conversation title: {e}")
+
                 # Send completion
                 yield f"data: {json.dumps({
                     'done': True,
@@ -307,6 +319,16 @@ def stream_message(request, conversation_id):
                         'agent_mode': False
                     }
                 )
+
+                # Generate conversation title if this is the first message
+                if conversation.title == "New Conversation":
+                    try:
+                        new_title = ollama.generate_conversation_title(user_message)
+                        conversation.title = new_title
+                        conversation.save(update_fields=['title'])
+                        logger.info(f"Generated title for conversation {conversation.id}: {new_title}")
+                    except Exception as e:
+                        logger.warning(f"Failed to generate conversation title: {e}")
 
                 # 6. Send completion
                 yield f"data: {json.dumps({

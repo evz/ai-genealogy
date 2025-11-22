@@ -8,12 +8,14 @@ Works with the simplified Person model - one genealogical_id = one Person.
 """
 
 import logging
+import re
 from typing import Dict, Optional
 from uuid import UUID
 
 from django.db.models import Q
 
-from genealogy.models import Event, Partnership, Person, Relationship
+from genealogy.models import Event, Partnership, Person, Relationship, TextChunk
+from genealogy.retrieval import HybridRetriever
 
 logger = logging.getLogger(__name__)
 
@@ -791,3 +793,81 @@ class GenealogyTools:
                 return (f"third cousin {removed_str}", "cousin")
             else:
                 return (f"{cousin_degree}th cousin {removed_str}", "cousin")
+
+    def search_source_text(self, query: str, max_results: int = 10) -> Dict:
+        """
+        Search genealogical source texts for information using semantic search.
+
+        This tool is useful for cross-cutting queries that aren't about specific people,
+        such as: "Who lived in Minneapolis?", "Are there any musicians?", "Who served in the military?"
+
+        Args:
+            query: Search query describing what you're looking for
+            max_results: Maximum number of text chunks to return (default: 10)
+
+        Returns:
+            {
+                "count": int,
+                "results": [
+                    {
+                        "chunk_id": "uuid",
+                        "text": "Full narrative text from the source...",
+                        "subject": "Pieter van Zanten",
+                        "genealogical_id": "VII.3.a",
+                        "page_range": "45-47",
+                        "score": 0.85,
+                        "mentioned_people": [
+                            {"name": "Pieter van Zanten", "genealogical_id": "VII.3.a"},
+                            {"name": "Dina Schouten", "genealogical_id": "VII.3.a.spouse1"}
+                        ]
+                    }
+                ]
+            }
+        """
+        # Limit max_results for safety
+        max_results = min(max_results, self.max_results)
+
+        # Use the hybrid retriever
+        retriever = HybridRetriever()
+        chunks = retriever.retrieve(query=query, top_k=max_results, expand_window=0)
+
+        results = []
+        for chunk in chunks:
+            # Extract genealogical IDs mentioned in the text
+            # Pattern matches genealogical IDs like "VII.3.a" or "IX.10.b.spouse1"
+            text = chunk.get('text_content', '')
+            id_pattern = r'\b([IVX]+\.\d+\.[a-z]+(?:\.\w+)?)\b'
+            mentioned_ids = re.findall(id_pattern, text)
+
+            # Get unique mentioned people with their names
+            mentioned_people = []
+            seen_ids = set()
+
+            for gen_id in mentioned_ids:
+                if gen_id in seen_ids:
+                    continue
+                seen_ids.add(gen_id)
+
+                # Try to find person with this genealogical_id
+                person = Person.objects.filter(genealogical_id=gen_id).first()
+                if person:
+                    mentioned_people.append({
+                        "name": person.full_name,
+                        "genealogical_id": gen_id
+                    })
+
+            results.append({
+                "chunk_id": str(chunk['id']),
+                "text": text,
+                "subject": chunk.get('subject', ''),
+                "genealogical_id": chunk.get('genealogical_identifier', ''),
+                "page_range": f"{chunk.get('start_page', '?')}-{chunk.get('end_page', '?')}",
+                "score": float(chunk.get('rrf_score', 0.0)),
+                "mentioned_people": mentioned_people
+            })
+
+        return {
+            "count": len(results),
+            "results": results,
+            "query": query
+        }
