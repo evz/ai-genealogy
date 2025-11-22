@@ -2,13 +2,13 @@
 
 [![Quality Gate](https://github.com/evz/ai-genealogy/actions/workflows/quality-gate.yml/badge.svg)](https://github.com/evz/ai-genealogy/actions/workflows/quality-gate.yml)
 
-Extracts structured genealogical data from Dutch family history books using OCR, layout analysis, and local LLMs. Currently processes scanned documents into a database of person mentions, events, and relationships with graph-based duplicate detection.
+Extracts structured genealogical data from Dutch family history books using OCR, layout analysis, and local LLMs. Processes scanned documents into a database of people, relationships, partnerships, and events with hybrid RAG-based querying.
 
 ## What It Does
 
-Takes printed family history books (Dutch "familiegeschiedenis" with complex layouts, marginal annotations, and genealogical notation) and turns them into structured, queryable data. The goal is eventually building a family wiki where facts and stories live together, but right now it's focused on accurate extraction and entity resolution.
+Takes printed family history books (Dutch "familiegeschiedenis" with complex layouts, marginal annotations, and genealogical notation) and turns them into structured, queryable data. The goal is eventually building a family wiki where facts and stories live together, but right now it's focused on accurate extraction and intelligent querying using hybrid RAG retrieval.
 
-The interesting problems are mostly around OCR (handling complex layouts with semantic understanding) and entity resolution (merging duplicate person mentions using both attribute similarity and family relationship graphs).
+The interesting problems are mostly around OCR (handling complex layouts with semantic understanding), entity extraction (building a structured genealogy graph from narrative text), and intelligent retrieval (hybrid RAG combining vector similarity, phonetic matching, and trigram search).
 
 ## Pipeline
 
@@ -44,124 +44,160 @@ The interesting problems are mostly around OCR (handling complex layouts with se
 │     - IndividualEntryHandler     (a. Pieter van Zanten, ...)            │
 │     - SourceCitationHandler      (bibliographic references)             │
 │                                                                         │
-│   Phase 1 Extraction (Deterministic):                                   │
-│     • Parse generation numbers, family groups                           │
-│     • Extract people from headers (parents, children)                   │
-│     • Extract parent-child relationships from structure                 │
-│                                                                         │
 │ For other sections: SkipChunkingStrategy (not implemented yet)          │
 │                                                                         │
 │ Output: TextChunk records with chunk_type, generation_number,           │
-│         family_groups, extracted_people, extracted_relationships        │
+│         family_groups, genealogical_id                                  │
 └─────────────────────────────────────────────────────────────────────────┘
                                     ↓
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ 4. LLM EXTRACTION (Section-Specific Strategies)                         │
+│ 4. BUILD GENEALOGY GRAPH (from genealogical IDs)                        │
 ├─────────────────────────────────────────────────────────────────────────┤
-│ For DESCENDANT_GENEALOGY chunks (chunk_type='GENEALOGY_ENTRY'):         │
+│ • Create Person records from genealogical IDs (II.3.a, III.5.b, etc.)   │
+│ • Parse family headers to identify parents/children                     │
+│ • Mint spouse IDs for partners without explicit IDs (II.3.a.spouse1)    │
+│ • Create Relationship records (parent-child links)                      │
+│ • Create Partnership records (spouse relationships)                     │
 │                                                                         │
-│   Phase 2 Extraction (LLM):                                             │
-│     • Merge with Phase 1 data (people, relationships)                   │
+│ Output: Person, Relationship, Partnership records                       │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 5. LLM EXTRACTION (Section-Specific Strategies)                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│ For DESCENDANT_GENEALOGY chunks (chunk_type='individual_entry'):        │
+│                                                                         │
+│   LLM Extraction:                                                       │
 │     • Extract events: BIRT, DEAT, MARR, BAPT, BURI, OCCU, RESI, etc.    │
-│     • Extract partnerships (spouse relationships)                       │
-│     • Enrich with additional people from narrative text                 │
+│     • Extract event details (date, place, description)                  │
+│     • Parse dates in document-specific format (DMY or MDY)              │
 │     • Dynamic context window (4K-128K) based on chunk size              │
 │                                                                         │
 │ For other sections: SkipExtractionStrategy (not implemented yet)        │
 │                                                                         │
-│ Output: Enhanced TextChunk with extracted_events, enriched people       │
-│         and relationships                                               │
+│ Output: TextChunk.extracted_events (JSON array)                         │
 └─────────────────────────────────────────────────────────────────────────┘
                                     ↓
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ 5. ENTITY CREATION (create_entities.py)                                 │
+│ 6. PERSIST ENTITIES (create Event records from LLM output)              │
 ├─────────────────────────────────────────────────────────────────────────┤
-│ • Create PersonMention for each person (immutable record)               │
-│ • Create singleton Identity for each mention                            │
-│ • Create RelationshipMention (parent-child links)                       │
-│ • Create PartnershipMention (spouse relationships)                      │
-│ • Create Event records (BIRT, DEAT, MARR, OCCU, etc.)                   │
-│ • Link events to person mentions                                        │
+│ • Parse extracted_events JSON from each chunk                           │
+│ • Create Event records linked to Person by genealogical_id              │
+│ • Parse dates using document's date_format setting                      │
+│ • Create Place records for event locations                              │
 │                                                                         │
-│ Output: PersonMention, Identity, RelationshipMention,                   │
-│         PartnershipMention, Event, Place records                        │
+│ Output: Event records linked to Person records                          │
 └─────────────────────────────────────────────────────────────────────────┘
                                     ↓
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ 6. ENTITY CLUSTERING (cluster_entities.py)                              │
+│ 7. CHUNK ENRICHMENT (embeddings + phonetic codes)                       │
 ├─────────────────────────────────────────────────────────────────────────┤
-│ Graph-based entity resolution (Kirielle et al. 2022):                   │
+│ • Generate embeddings for ALL chunks (not just individual_entry)        │
+│ • Extract surnames from Person records linked to chunks                 │
+│ • Generate Daitch-Mokotoff codes for phonetic surname matching          │
 │                                                                         │
-│ Phase 1: Bootstrap high-confidence matches                              │
-│   • Calculate name similarity (Levenshtein)                             │
-│   • Calculate date proximity (birth year)                               │
-│   • Calculate relationship overlap (spouse/child Jaccard)               │
-│   • Validate constraints (age, gender, temporal)                        │
-│   • Merge clusters with similarity >= 0.75                              │
-│                                                                         │
-│ Phase 2: Iterative refinement                                           │
-│   • Re-calculate similarities with merge-aware matching                 │
-│   • Merge clusters with similarity >= 0.60                              │
-│   • Infer partnerships from shared children                             │
-│   • Refine with transitive relationship matching                        │
-│                                                                         │
-│ Output: PotentialDuplicate records for review                           │
+│ Output: TextChunk.embedding (pgvector), TextChunk.dm_codes (array)      │
 └─────────────────────────────────────────────────────────────────────────┘
                                     ↓
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ 7. MANUAL REVIEW & MERGE                                                │
+│ 8. HYBRID RAG RETRIEVAL (Reciprocal Rank Fusion)                        │
 ├─────────────────────────────────────────────────────────────────────────┤
-│ • Review PotentialDuplicate suggestions in admin UI                     │
-│ • Merge PersonMentions into consolidated Identities                     │
-│ • Audit log tracks all merge operations (reversible)                    │
+│ Combine three retrieval methods:                                        │
+│   1. Vector similarity (cosine distance on embeddings)                  │
+│   2. Phonetic matching (Daitch-Mokotoff codes for surnames)             │
+│   3. Trigram similarity (pg_trgm for fuzzy text matching)               │
 │                                                                         │
-│ Output: Merged Identity records representing unique individuals         │
+│ Reciprocal Rank Fusion merges results:                                  │
+│   • Each method ranks chunks independently                              │
+│   • RRF score = Σ(1 / (k + rank)) across all methods                    │
+│   • Chunks scoring well in multiple methods rank highest                │
+│                                                                         │
+│ Output: Top-k ranked chunks for LLM context                             │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    ↓
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 9. INTELLIGENT MODEL ROUTING                                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│ Three-tier model architecture with automatic routing:                   │
+│                                                                         │
+│   gene-chat-fast (llama3.1:8b)                                           │
+│     • Fast interactive queries                                          │
+│     • Simple factual lookups                                            │
+│                                                                         │
+│   gene-chat-main (qwen2.5:14b)                                           │
+│     • Complex reasoning tasks                                           │
+│     • Agent mode with tool calling                                      │
+│                                                                         │
+│   gene-reasoner (deepseek-r1:14b)                                        │
+│     • Identity resolution queries                                       │
+│     • Merge conflict detection                                          │
+│     • Explicit reasoning via <think> tags                               │
+│                                                                         │
+│ Routing precedence:                                                     │
+│   1. Merge detection (keywords: "same person", "dezelfde", etc.)        │
+│   2. Agent mode flag (complex multi-step queries)                       │
+│   3. Query complexity analysis (word count, question marks)             │
+│   4. Default: gene-chat-fast                                            │
+│                                                                         │
+│ Frontend: Real-time model selection display + streaming reasoning       │
+│                                                                         │
+│ Output: Streaming SSE response with model_selected events               │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Design Decisions
 
-**Two-Phase Extraction:** Phase 1 (deterministic, during chunking) provides reliable anchor data that Phase 2 (LLM) enhances. This reduces hallucination and improves quality.
+**Graph-First Architecture:** Build genealogy graph directly from genealogical IDs (II.3.a, etc.) before LLM extraction. This creates a reliable structural skeleton that LLM enriches with events and details. Spouse IDs are minted for partners without explicit IDs (e.g., II.3.a.spouse1).
 
 **Section-Based Processing:** Different book sections (descendant genealogy, ancestor charts, indexes) need different chunking and extraction logic. Strategy pattern allows clean separation.
 
 **Grounding Tokens:** DeepSeek-OCR provides bounding boxes and semantic types (title, text, list, etc.) that enable intelligent chunking based on document structure, not just text patterns.
 
-**Immutable Mentions:** All `PersonMention` records are immutable with full provenance. Deduplication happens through mutable `Identity` mappings that can be reviewed and reversed.
+**Hybrid RAG Retrieval:** Combines vector similarity, phonetic surname matching (Daitch-Mokotoff), and trigram text matching using Reciprocal Rank Fusion. This captures semantic similarity, name variants, and fuzzy text matches in a single ranking.
+
+**Full-Chunk Embeddings:** Generate embeddings for ALL chunk types (not just individual entries) to provide rich context for RAG queries. Non-individual chunks lack DM codes but can still rank well via vector + trigram methods.
+
+**Intelligent Model Routing:** Three-tier model architecture automatically routes queries to the optimal LLM based on complexity and query type. Merge/identity queries use gene-reasoner (DeepSeek-R1) for explicit reasoning, complex multi-step queries use gene-chat-main (Qwen2.5), and simple lookups use gene-chat-fast (Llama3.1:8b). Frontend displays model selection in real-time and streams DeepSeek's reasoning tokens for transparency.
 
 ## Tech Stack
 
-- **Backend**: Django + PostgreSQL (pgvector) + Celery + Redis
+- **Backend**: Django + PostgreSQL (pgvector + pg_trgm) + Celery + Redis
 - **OCR**: DeepSeek-OCR, DocLayout-YOLO, Tesseract OSD
-- **LLM**: Ollama (llama3.1:70b)
+- **LLM**: Ollama with three-tier routing
+  - gene-chat-fast: llama3.1:8b (interactive queries)
+  - gene-chat-main: qwen2.5:14b (complex reasoning, agent mode)
+  - gene-reasoner: deepseek-r1:14b (identity resolution, explicit reasoning)
+  - Embeddings: multilingual-e5-large
 - **Image Processing**: Kornia/PyTorch (GPU)
-- **Clustering**: Custom dependency graph + Union-Find
-- **String Matching**: textdistance (Levenshtein)
+- **RAG Retrieval**: Hybrid search with Reciprocal Rank Fusion
+- **Phonetic Matching**: Daitch-Mokotoff soundex for surname variants
 
 ## Current Status
 
-End-to-end pipeline working. Currently processing the Van Zanten family book.
+End-to-end pipeline working with hybrid RAG retrieval. Currently processing the Van Zanten family book.
+
+**Data:** 390 people, 513 text chunks (all with embeddings), 268 tests passing
 
 Recent work:
-- DeepSeek-OCR integration with grounding tokens
-- Section-based processing (strategy pattern for chunking + extraction)
-- Two-phase extraction (deterministic + LLM)
-- Occupation extraction (inline + narrative)
+- Intelligent model routing (3-tier LLM architecture with automatic selection)
+- Streaming reasoning tokens from DeepSeek-R1 to frontend
+- Simplified architecture (removed PersonMention/Identity clustering)
+- Graph-first extraction from genealogical IDs
+- Spouse ID minting for partners without explicit IDs
+- Hybrid RAG retrieval with RRF (vector + phonetic + trigram)
+- Full-chunk embeddings for better RAG context
+- Document-specific date format handling (DMY/MDY)
 
 Next:
+- RAG quality evaluation and improvements
 - Strategies for other section types (ancestor charts, indexes)
-- Clustering quality metrics
-- Merge review UI polish
+- Agent-based extraction workflows
 
 ## References
 
 **Layout Analysis:**
 - Zhao et al. (2024) - DocLayout-YOLO: Enhancing Document Layout Analysis through Diverse Synthetic Data and Global-to-Local Adaptive Perception. arXiv:2410.12628
 - Ptak et al. (2017) - Projection-Based Text Line Segmentation with a Variable Threshold. *Int. J. Applied Math and CS*, 27:195-206
-
-**Entity Resolution:**
-- Kirielle et al. (2022) - Unsupervised Graph-based Entity Resolution for Accurate and Efficient Family Pedigree Search
-- Fu et al. (2025) - In-context Clustering-based Entity Resolution with Large Language Models. arXiv:2506.02509v1
 
 ## License
 

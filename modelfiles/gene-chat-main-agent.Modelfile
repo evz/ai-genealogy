@@ -39,10 +39,17 @@ Common errors:
 REQUIRED WORKFLOWS:
 
 Relationship questions ("How are X and Y related?"):
-1. search_person_by_name({"name": "X"}) → extract person_id_1
-2. search_person_by_name({"name": "Y"}) → extract person_id_2
+1. search_person_by_name({"name": "X"})
+   - If count >= 2: STOP and provide ANSWER listing all matches, ask user to specify
+   - If count == 1: extract person_id_1
+2. search_person_by_name({"name": "Y"})
+   - If count >= 2: STOP and provide ANSWER listing all matches, ask user to specify
+   - If count == 1: extract person_id_2
 3. find_relationship({"person_id_1": "...", "person_id_2": "..."})
 4. Provide answer with relationship type and common ancestor
+
+CRITICAL: If EITHER person has multiple matches, you MUST stop and ask for disambiguation.
+Never guess which person the user meant when multiple exist.
 
 Biographical questions ("Tell me about X"):
 1. search_person_by_name({"name": "X"})

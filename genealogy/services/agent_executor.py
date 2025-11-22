@@ -451,7 +451,12 @@ class AgentExecutor:
         context: str,
         tool_calls_made: List[Dict]
     ) -> str:
-        """Build prompt for agentic workflow"""
+        """
+        Build prompt for agentic workflow.
+
+        NOTE: Core instructions (tool protocol, error recovery, workflows) are in the
+        model's SYSTEM prompt. This prompt provides only the current state.
+        """
 
         tools_description = "\n".join([
             f"- {tool['name']}: {tool['description']}\n  Parameters: {tool['parameters']}"
@@ -459,108 +464,28 @@ class AgentExecutor:
         ])
 
         previous_tools = "\n".join([
-            f"Iteration {call['iteration']}: Called {call['tool']} with {call['arguments']}"
+            f"Iteration {call['iteration']}: {call['tool']}({call['arguments']})"
             for call in tool_calls_made
         ]) if tool_calls_made else "None"
 
-        return f"""You are a genealogy research assistant with access to tools to find information about people and relationships.
-
-CURRENT CONTEXT:
-{context if context else "No context yet - you may need to search for information."}
-
-PREVIOUS TOOL CALLS:
-{previous_tools}
-
-USER QUERY: {user_query}
+        return f"""USER QUERY: {user_query}
 
 AVAILABLE TOOLS:
 {tools_description}
 
-INSTRUCTIONS:
-1. Review the CURRENT CONTEXT first - it includes conversation history and retrieved documents
-2. Use conversation history to resolve pronouns (e.g., "his children" means the person just discussed)
+PREVIOUS TOOL CALLS ({len(tool_calls_made)}/{self.max_iterations} calls made):
+{previous_tools}
 
-3. CRITICAL: EXTRACTING IDs FROM TOOL RESULTS
-   - When search_person_by_name returns results, it provides JSON with "id" and "genealogical_id" fields
-   - You MUST use the "id" field (UUID) or "genealogical_id" field for subsequent tool calls
-   - NEVER use the "display_name" or full name string as person_id
-   - Example CORRECT usage:
-     * search_person_by_name returns: {{"id": "abc-123", "genealogical_id": "VI.1.n", "display_name": "Aart van Zanten"}}
-     * Next call: get_person_details({{"person_id": "VI.1.n"}}) ← CORRECT
-     * OR: get_children({{"person_id": "abc-123"}}) ← CORRECT
-     * WRONG: get_children({{"person_id": "Aart van Zanten"}}) ← THIS WILL FAIL!
+CURRENT CONTEXT:
+{context if context else "No context yet - search for information using tools."}
 
-4. ERROR HANDLING AND REFLECTION
-   - If a tool call returns an error, DO NOT repeat the same call with the same arguments
-   - When you receive an error, you MUST include an explicit reflection in your THOUGHT before the next action:
-     * ERROR_REFLECTION: Explain what went wrong and why the error occurred
-     * NEXT_ATTEMPT: Describe specifically what you will try differently
-   - Common errors and how to fix them:
-     * "Person not found: <name>" → You passed a name instead of an ID. Extract the "id" or "genealogical_id" field from the previous search result.
-     * "DUPLICATE CALL BLOCKED" or "previous_iteration" in error → You ALREADY made this exact call earlier! Look back at the OBSERVATION from the iteration number mentioned in the error. The answer you need is in that previous OBSERVATION. DO NOT call the tool again - use the previous result.
-     * Empty results → The person might not have that information. Try a different tool or provide what you found.
-   - Example error reflection for duplicate calls:
-     * ERROR_REFLECTION: I received "DUPLICATE CALL BLOCKED...iteration 2". This means I already called this tool with these arguments in iteration 2.
-     * NEXT_ATTEMPT: I will review the OBSERVATION from iteration 2 to extract the information I need, rather than calling the tool again.
+IMPORTANT REMINDERS:
+- Use conversation context to resolve pronouns (e.g., "his children" = the person just discussed)
+- Extract "id" or "genealogical_id" from search results before calling other tools
+- If you receive a DUPLICATE CALL error referencing iteration N, review that iteration's result
+- You have {self.max_iterations - len(tool_calls_made)} tool calls remaining
 
-5. CRITICAL DISAMBIGUATION RULE: When asked about a person by name only (without birth year, occupation, or other specifics):
-   - ALWAYS call search_person_by_name FIRST, even if the context has information
-   - If search_person_by_name returns count >= 2, you MUST respond with ANSWER that lists all matches
-   - Your ANSWER must be a numbered list of ALL people with birth/death/occupation details
-   - Do NOT provide biographical information about just ONE person when multiple exist
-   - Do NOT call get_person_details when search_person_by_name found multiple matches
-   - Ask the user "Which person would you like to know more about?"
-
-6. GETTING DETAILED INFORMATION: When the user asks for details about a SPECIFIC person (either by genealogical ID, or after disambiguation):
-   - ALWAYS call get_person_details to retrieve full event history, partnerships, children, and parents
-   - NEVER answer with just basic info from search results - get the complete details
-   - Use get_person_details even if you have some information in context
-   - Remember: Extract the "id" or "genealogical_id" from previous search results!
-
-7. NARRATIVE RESPONSES: When providing biographical information about a person:
-   - Write 2-3 paragraphs in narrative form, not just bullet points
-   - Weave together events chronologically to tell their life story
-   - Include specific dates, places, occupations, and family relationships
-   - Make it read like a biography, not a database dump
-   - Check the "source_texts" field in get_person_details results - it contains narrative details about military service, orphan status, and life events that may not be in structured events
-   - Example: "Bessel van Zanten was born on August 17, 1841 in Naarden, the son of Aart (Arie) van Zanten and Anna Antonia Kappers. He spent his life working as a railway crossing keeper in Naarden. Bessel married and had four children: Pieter (Peter), born in 1873, a stillborn son in 1876, Bessel, and Kornelia Petronella Johanna. He lived until February 16, 1911, when he passed away in Haarlem at the age of 69."
-
-8. You've made {len(tool_calls_made)}/{self.max_iterations} tool calls - gather all needed information before providing your answer
-9. BE THOROUGH: Call get_person_details for biographical questions, get_children for family questions, etc.
-
-RESPONSE FORMAT:
-You must respond in one of two ways:
-
-OPTION 1 - Call a tool (when you need more information):
-TOOL_CALL: <tool_name>
-ARGUMENTS: <json_dict_of_arguments>
-REASONING: <why you're calling this tool>
-
-OPTION 2 - Provide final answer (write a narrative biography, not a list):
-ANSWER: <your complete narrative answer to the user's question>
-
-DISAMBIGUATION EXAMPLE:
-If you find multiple people named "Bessel van Zanten", respond like this:
-
-ANSWER: I found 12 people named Bessel van Zanten in the records:
-
-1. Bessel van Zanten (VI.1.n) - born 1841 in Naarden, died 1911 in Haarlem, worked as railway crossing keeper
-2. Bessel van Zanten (VII.3.c) - born 1877, worked as beer merchant (koetsier, bierhuishouder)
-3. Bessel van Zanten (IX.8.a) - born 1923
-...
-
-Which person would you like to know more about? You can specify by birth year, occupation, or genealogical ID.
-
-NARRATIVE EXAMPLE:
-When asked "Tell me about VI.1.n", after calling get_person_details, respond like:
-
-ANSWER: Bessel van Zanten (VI.1.n) was born on August 17, 1841 in Naarden to Aart (Arie) van Zanten and Anna Antonia Kappers. He worked as a railway crossing keeper (spoorwegwachter) in Naarden, a position he likely held for many years serving the local railway line.
-
-Bessel married Geertruij Voorhaar, and together they had four children. Their first child, Pieter (Peter) van Zanten, was born in 1873. Tragically, their second child, a son, was stillborn in 1876. They later had two more children: Bessel and Kornelia Petronella Johanna (Cornelia P).
-
-After a long life in Naarden, Bessel passed away on February 16, 1911 in Haarlem at the age of 69, having witnessed significant changes in Dutch railway infrastructure during his lifetime.
-
-Choose one format and respond now:"""
+Respond with either TOOL_CALL or ANSWER:"""
 
     def _parse_response(self, response: str) -> Dict:
         """

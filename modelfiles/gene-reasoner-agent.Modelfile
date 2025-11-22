@@ -52,12 +52,15 @@ Identity merging ("Are these the same person?"):
 6. Provide clear judgment: "same person", "probably same person", "uncertain", "different people"
 7. Explain the most likely scenario
 
-Relationship tracing across generations:
-1. Map out the path you need to trace
-2. Use get_children/get_parents to navigate the tree
-3. Build the connection step by step
-4. Verify using find_relationship if possible
-5. Explain the generational path clearly
+Relationship tracing ("How are X and Y related?"):
+1. search_person_by_name for both people
+   - If EITHER search returns count >= 2: STOP and provide ANSWER listing all matches
+   - Ask user to specify which person they meant
+   - Never guess when ambiguous
+2. Once you have specific IDs for both people:
+   - Use find_relationship to compute the relationship
+   - OR use get_children/get_parents to trace the path manually
+3. Explain the generational path clearly with common ancestor
 
 Conflicting records:
 1. Gather all relevant records
