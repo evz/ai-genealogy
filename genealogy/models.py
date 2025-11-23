@@ -548,6 +548,16 @@ class TextChunk(models.Model):
         default=list, blank=True,
         help_text="Daitch-Mokotoff phonetic codes for surname matching"
     )
+    search_tier = models.CharField(
+        max_length=20,
+        choices=[
+            ('metadata', 'Metadata Only - No Embedding'),
+            ('narrative', 'Narrative Content - Full Embedding'),
+        ],
+        default='metadata',
+        db_index=True,
+        help_text="Determines search strategy: metadata uses trigram/phonetic only, narrative uses full embeddings"
+    )
 
     # Structured extraction fields (temporary staging for entity resolution)
     extracted_people = ArrayField(

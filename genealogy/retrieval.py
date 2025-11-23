@@ -78,7 +78,21 @@ class HybridRetriever:
         # 1. Prepare query features
         query_features = self._extract_query_features(query)
 
-        # 1.5. Extract potential person names from query for pre-filtering
+        # 1.5. Detect query type and expand semantic queries
+        query_type = self._detect_query_type(query, query_features["dm_codes"])
+
+        if query_type == 'semantic':
+            # Expand semantic queries with Dutch/English synonyms for better recall
+            expanded_query = self._expand_semantic_query(query)
+            # Re-extract features with expanded query for better trigram matching
+            query_features = self._extract_query_features(expanded_query)
+
+            # For semantic queries, increase retrieval limits to get better coverage
+            # These queries need to find all matching biographical content
+            vec_limit = max(vec_limit, top_k * 2)
+            trigram_limit = max(trigram_limit, top_k * 2)
+
+        # 1.6. Extract potential person names from query for pre-filtering
         person_filter = self._extract_person_names_from_query(query)
 
         # 2. Run hybrid search
@@ -152,6 +166,58 @@ class HybridRetriever:
             "dm_codes": dm_codes,
         }
 
+    def _detect_query_type(self, query_text: str, query_dm_codes: list) -> str:
+        """
+        Detect if query is name-based or semantic.
+
+        Returns:
+            'name' for name-based queries (has capitalized names, DM codes)
+            'semantic' for semantic queries (cross-cutting questions)
+        """
+        # If we have DM codes (capitalized names), it's a name query
+        # Otherwise it's a semantic query
+        return 'name' if query_dm_codes else 'semantic'
+
+    def _expand_semantic_query(self, query_text: str) -> str:
+        """
+        Expand semantic queries with Dutch/English synonyms and related terms.
+
+        Uses LLM to generate additional search terms that help bridge the gap
+        between modern queries and archaic Dutch terminology in historical documents.
+
+        Args:
+            query_text: Original user query
+
+        Returns:
+            Expanded query string with additional terms
+        """
+        prompt = f"""Generate search terms for this genealogy query. Include:
+- Dutch terms (historical and modern)
+- English equivalents
+- Archaic/historical occupations and terminology
+- Related roles and institutions
+
+Query: {query_text}
+
+Return ONLY a comma-separated list of search terms, no categories or explanation:"""
+
+        try:
+            response = self.ollama.generate(
+                model="llama3.1:8b",
+                prompt=prompt,
+                system=""
+            )
+
+            # Clean up response - remove newlines, extra spaces
+            expanded_terms = ' '.join(response.strip().split())
+
+            logger.info(f"Expanded query '{query_text}' to: {expanded_terms[:100]}...")
+            return expanded_terms
+
+        except Exception as e:
+            logger.warning(f"Query expansion failed: {e}. Using original query.")
+            return query_text
+
     def _extract_person_names_from_query(self, query: str) -> Optional[List[str]]:
         """
         Extract potential person names from the query for pre-filtering.
@@ -219,6 +285,21 @@ class HybridRetriever:
             person_filter_clause = " AND (" + " AND ".join(name_conditions) + ")"
             logger.info(f"Applying person filter: {person_filter}")
 
+        # Detect query type to determine which tiers to search
+        query_type = self._detect_query_type(query_text, query_dm_codes)
+
+        if query_type == 'semantic':
+            # Semantic queries: only search narrative tier (chunks with biographical content)
+            tier_filter = " AND search_tier = 'narrative'"
+            logger.info(f"Semantic query detected - searching narrative tier only")
+        else:
+            # Name queries: search both tiers
+            tier_filter = " AND search_tier IN ('metadata', 'narrative')"
+            logger.info(f"Name query detected - searching both tiers")
+
+        # Vector search ALWAYS only applies to narrative tier (only tier with embeddings)
+        vec_tier_filter = " AND search_tier = 'narrative'"
+
         # SQL query with four-leg hybrid search + RRF fusion
         sql = f"""
         WITH
@@ -233,7 +314,7 @@ class HybridRetriever:
             SELECT id,
                    row_number() OVER (ORDER BY embedding <=> q_vec) AS vec_rank
             FROM   genealogy_textchunk, params
-            WHERE  embedding IS NOT NULL{person_filter_clause}
+            WHERE  embedding IS NOT NULL{vec_tier_filter}{person_filter_clause}
             ORDER  BY embedding <=> q_vec
             LIMIT  {vec_limit}
         ),
@@ -242,7 +323,7 @@ class HybridRetriever:
             SELECT id,
                    row_number() OVER (ORDER BY similarity(text_content, q_text) DESC) AS tg_rank
             FROM   genealogy_textchunk, params
-            WHERE  text_content % q_text{person_filter_clause}
+            WHERE  text_content % q_text{tier_filter}{person_filter_clause}
             LIMIT  {trigram_limit}
         ),
 
@@ -250,7 +331,7 @@ class HybridRetriever:
             SELECT id,
                    row_number() OVER () AS ph_rank
             FROM   genealogy_textchunk, params
-            WHERE  dm_codes::text[] && q_dm{person_filter_clause}
+            WHERE  dm_codes::text[] && q_dm{tier_filter}{person_filter_clause}
             LIMIT  {phonetic_limit}
         ),
 
@@ -260,7 +341,7 @@ class HybridRetriever:
             FROM   genealogy_textchunk, params
             WHERE  subject IS NOT NULL
                    AND subject != ''
-                   AND subject % q_text{person_filter_clause}
+                   AND subject % q_text{tier_filter}{person_filter_clause}
             LIMIT  {subject_limit}
         ),
 

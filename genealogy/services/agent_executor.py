@@ -80,7 +80,7 @@ class AgentExecutor:
             "description": "Search genealogical source texts using semantic search. Use this for cross-cutting queries that aren't about specific people, such as: 'Who lived in Minneapolis?', 'Are there any musicians?', 'Who served in the military?', 'Tell me about people who emigrated to America'. Returns narrative text chunks with relevance scores AND automatically extracts mentioned people with their genealogical IDs, making it easy to follow up with get_person_details.",
             "parameters": {
                 "query": "Search query describing what you're looking for (e.g., 'musicians', 'lived in Minneapolis', 'military service')",
-                "max_results": "Maximum number of text chunks to return (default 10)"
+                "max_results": "OPTIONAL - Maximum number of text chunks to return (default 50, optimized for semantic queries). Omit this parameter to use the default."
             }
         }
     ]
@@ -110,7 +110,7 @@ class AgentExecutor:
             tool_calls_made: List of previous tool calls
 
         Returns:
-            Error dict if duplicate detected, None otherwise
+            The previous result with a duplicate notice if detected, None otherwise
         """
         call_signature = (tool_name, json.dumps(tool_args, sort_keys=True))
 
@@ -124,11 +124,24 @@ class AgentExecutor:
                 previous_result = call.get("result", {})
                 prev_iter = call.get("iteration", "unknown")
 
-                return {
-                    "error": f"STOP! DUPLICATE CALL BLOCKED. You already called {tool_name} with these EXACT same arguments in iteration {prev_iter}. You MUST use the result from that previous call instead of calling again. Review the results from iteration {prev_iter} in this conversation. If you need different information, call a DIFFERENT tool or use DIFFERENT arguments. Repeating this exact call wastes iterations.",
-                    "previous_iteration": prev_iter,
-                    "hint": "Look back at the tool results from earlier in this conversation to find what you need."
-                }
+                # Return the previous result with a notice that this was a duplicate
+                result_copy = previous_result.copy() if isinstance(previous_result, dict) else previous_result
+
+                # Add a note at the top of the result
+                duplicate_notice = f"[DUPLICATE CALL - Returning cached result from iteration {prev_iter}. You already called {tool_name} with these same arguments. Use this result instead of calling again.]"
+
+                # If result is a dict, add the notice as a field
+                if isinstance(result_copy, dict):
+                    result_copy["_duplicate_notice"] = duplicate_notice
+                    result_copy["_previous_iteration"] = prev_iter
+                    return result_copy
+                else:
+                    # For non-dict results, wrap it
+                    return {
+                        "_duplicate_notice": duplicate_notice,
+                        "_previous_iteration": prev_iter,
+                        "result": result_copy
+                    }
 
         return None
 

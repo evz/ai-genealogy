@@ -73,15 +73,20 @@ class ChunkEnrichmentService:
             dm_codes_to_save = None
 
             # Generate embedding if requested
+            # Skip embedding generation for metadata-tier chunks (they use trigram/phonetic only)
             if generate_embedding and (force or not chunk.embedding):
-                embedding = self._generate_embedding(chunk.text_content, embedding_model)
-                if embedding:
-                    embedding_to_save = embedding
-                    result["embedding_generated"] = True
+                if chunk.search_tier == 'metadata':
+                    logger.debug(f"Skipping embedding for metadata-tier chunk {chunk.id}")
+                    result["embedding_generated"] = False
                 else:
-                    result["success"] = False
-                    result["error"] = "Failed to generate embedding"
-                    return result
+                    embedding = self._generate_embedding(chunk.text_content, embedding_model)
+                    if embedding:
+                        embedding_to_save = embedding
+                        result["embedding_generated"] = True
+                    else:
+                        result["success"] = False
+                        result["error"] = "Failed to generate embedding"
+                        return result
 
             # Generate DM codes if requested
             if generate_dm_codes and (force or not chunk.dm_codes):

@@ -102,6 +102,11 @@ The interesting problems are mostly around OCR (handling complex layouts with se
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ 8. HYBRID RAG RETRIEVAL (Reciprocal Rank Fusion)                        │
 ├─────────────────────────────────────────────────────────────────────────┤
+│ Semantic Query Expansion (for queries without capitalized names):       │
+│   • LLM generates Dutch/English synonyms and archaic terminology        │
+│   • Example: "military" → "ruiter, soldaat, cavalerie, militie"         │
+│   • Increases retrieval limits (2x top_k) for better coverage           │
+│                                                                         │
 │ Combine three retrieval methods:                                        │
 │   1. Vector similarity (cosine distance on embeddings)                  │
 │   2. Phonetic matching (Daitch-Mokotoff codes for surnames)             │
@@ -155,7 +160,11 @@ The interesting problems are mostly around OCR (handling complex layouts with se
 
 **Hybrid RAG Retrieval:** Combines vector similarity, phonetic surname matching (Daitch-Mokotoff), and trigram text matching using Reciprocal Rank Fusion. This captures semantic similarity, name variants, and fuzzy text matches in a single ranking.
 
-**Full-Chunk Embeddings:** Generate embeddings for ALL chunk types (not just individual entries) to provide rich context for RAG queries. Non-individual chunks lack DM codes but can still rank well via vector + trigram methods.
+**Hierarchical Search Tiers:** Chunks are classified into two tiers based on content richness:
+- **Metadata tier** (66%): Short entries (< 100 chars) with just vital statistics. No embeddings generated. Searchable via trigram/phonetic matching for name-based queries.
+- **Narrative tier** (34%): Longer entries (>= 100 chars) with biographical content. Full embeddings generated. Used for semantic queries like "Who served in the military?"
+
+This reduces embedding storage by 66% and dramatically improves semantic search precision by excluding stub entries from vector search.
 
 **Intelligent Model Routing:** Three-tier model architecture automatically routes queries to the optimal LLM based on complexity and query type. Merge/identity queries use gene-reasoner (DeepSeek-R1) for explicit reasoning, complex multi-step queries use gene-chat-main (Qwen2.5), and simple lookups use gene-chat-fast (Llama3.1:8b). Frontend displays model selection in real-time and streams DeepSeek's reasoning tokens for transparency.
 
@@ -179,6 +188,7 @@ End-to-end pipeline working with hybrid RAG retrieval. Currently processing the 
 **Data:** 390 people, 513 text chunks (all with embeddings), 268 tests passing
 
 Recent work:
+- Semantic query expansion (LLM-based Dutch/English synonym generation for archaic terminology)
 - Intelligent model routing (3-tier LLM architecture with automatic selection)
 - Streaming reasoning tokens from DeepSeek-R1 to frontend
 - Simplified architecture (removed PersonMention/Identity clustering)

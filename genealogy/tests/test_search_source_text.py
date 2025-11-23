@@ -42,6 +42,7 @@ class TestSearchSourceText:
                 'text_content': 'Pieter (VIII.3.d) lived in Minneapolis.',
                 'subject': 'Pieter van Zanten',
                 'genealogical_identifier': 'VIII.3.d',
+                'chunk_type': 'individual_entry',
                 'start_page': 45,
                 'end_page': 47,
                 'rrf_score': 0.92
@@ -61,10 +62,10 @@ class TestSearchSourceText:
         assert result["query"] == "Minneapolis"
         assert result["count"] == 1
 
-        # Should have called retriever with correct params
+        # Should have called retriever with max_results * 3 (due to filtering)
         mock_retriever.retrieve.assert_called_once_with(
             query="Minneapolis",
-            top_k=5,
+            top_k=15,  # 5 * 3
             expand_window=0
         )
 
@@ -78,6 +79,7 @@ class TestSearchSourceText:
                 'text_content': 'Pieter played the flute and piccolo.',
                 'subject': 'Pieter van Zanten',
                 'genealogical_identifier': 'VIII.3.d',
+                'chunk_type': 'individual_entry',
                 'start_page': 50,
                 'end_page': 52,
                 'rrf_score': 0.88
@@ -113,6 +115,7 @@ class TestSearchSourceText:
                 'text_content': 'Pieter (VIII.3.d) married Hilda Victoria Fogelberg (VIII.3.d.spouse1) in 1930.',
                 'subject': 'Pieter van Zanten',
                 'genealogical_identifier': 'VIII.3.d',
+                'chunk_type': 'individual_entry',
                 'start_page': 60,
                 'end_page': 62,
                 'rrf_score': 0.95
@@ -147,6 +150,7 @@ class TestSearchSourceText:
                 'text_content': f'Text chunk {i}',
                 'subject': 'Person',
                 'genealogical_identifier': 'I.1.a',
+                'chunk_type': 'individual_entry',
                 'start_page': i,
                 'end_page': i,
                 'rrf_score': 0.5
@@ -157,10 +161,10 @@ class TestSearchSourceText:
 
         result = self.tools.search_source_text(query="test", max_results=5)
 
-        # Should call retriever with max_results=5
+        # Should call retriever with max_results * 3
         mock_retriever.retrieve.assert_called_once_with(
             query="test",
-            top_k=5,
+            top_k=15,  # 5 * 3
             expand_window=0
         )
 
@@ -174,10 +178,10 @@ class TestSearchSourceText:
         # Request 100 results
         result = self.tools.search_source_text(query="test", max_results=100)
 
-        # Should be capped at 20 (the GenealogyTools safety limit)
+        # Should be capped at 20, then * 3 = 60
         mock_retriever.retrieve.assert_called_once_with(
             query="test",
-            top_k=20,  # Capped at safety limit
+            top_k=60,  # 20 (safety limit) * 3
             expand_window=0
         )
 
@@ -191,6 +195,7 @@ class TestSearchSourceText:
                 'text_content': 'Pieter (VIII.3.d) and his wife. Pieter (VIII.3.d) later moved to America.',
                 'subject': 'Pieter van Zanten',
                 'genealogical_identifier': 'VIII.3.d',
+                'chunk_type': 'individual_entry',
                 'start_page': 70,
                 'end_page': 72,
                 'rrf_score': 0.90
@@ -246,7 +251,7 @@ class TestSearchSourceText:
 
     @patch('genealogy.services.genealogy_tools.HybridRetriever')
     def test_handles_chunks_without_genealogical_ids(self, mock_retriever_class):
-        """Test that chunks without genealogical IDs in text are handled gracefully"""
+        """Test that chunks without genealogical IDs are filtered out"""
         mock_retriever = Mock()
         mock_retriever.retrieve.return_value = [
             {
@@ -254,6 +259,7 @@ class TestSearchSourceText:
                 'text_content': 'This is just plain text without any genealogical identifiers.',
                 'subject': 'Unknown',
                 'genealogical_identifier': '',
+                'chunk_type': 'individual_entry',
                 'start_page': 1,
                 'end_page': 1,
                 'rrf_score': 0.50
@@ -263,6 +269,41 @@ class TestSearchSourceText:
 
         result = self.tools.search_source_text(query="text", max_results=5)
 
-        # Should still return the chunk, just with empty mentioned_people
+        # Should still return the chunk since it has chunk_type set
         assert result["count"] == 1
+        # But mentioned_people will be empty since genealogical_identifier is empty
         assert len(result["results"][0]["mentioned_people"]) == 0
+
+    @patch('genealogy.services.genealogy_tools.HybridRetriever')
+    def test_filters_out_non_biographical_chunks(self, mock_retriever_class):
+        """Test that non-biographical chunk types are filtered out"""
+        mock_retriever = Mock()
+        mock_retriever.retrieve.return_value = [
+            {
+                'id': 'chunk-header',
+                'text_content': '## VIERDE GENERATIE',
+                'subject': None,
+                'genealogical_identifier': None,
+                'chunk_type': 'generation_header',
+                'start_page': 1,
+                'end_page': 1,
+                'rrf_score': 0.50
+            },
+            {
+                'id': 'chunk-bio',
+                'text_content': 'Pieter van Zanten lived in Amsterdam.',
+                'subject': 'Pieter van Zanten',
+                'genealogical_identifier': 'VIII.3.d',
+                'chunk_type': 'individual_entry',
+                'start_page': 2,
+                'end_page': 2,
+                'rrf_score': 0.80
+            }
+        ]
+        mock_retriever_class.return_value = mock_retriever
+
+        result = self.tools.search_source_text(query="test", max_results=5)
+
+        # Should only return the biographical chunk, not the header
+        assert result["count"] == 1
+        assert result["results"][0]["chunk_id"] == 'chunk-bio'

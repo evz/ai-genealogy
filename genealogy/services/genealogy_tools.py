@@ -794,7 +794,7 @@ class GenealogyTools:
             else:
                 return (f"{cousin_degree}th cousin {removed_str}", "cousin")
 
-    def search_source_text(self, query: str, max_results: int = 10) -> Dict:
+    def search_source_text(self, query: str, max_results: int = 50) -> Dict:
         """
         Search genealogical source texts for information using semantic search.
 
@@ -803,7 +803,7 @@ class GenealogyTools:
 
         Args:
             query: Search query describing what you're looking for
-            max_results: Maximum number of text chunks to return (default: 10)
+            max_results: Maximum number of text chunks to return (default: 50)
 
         Returns:
             {
@@ -828,22 +828,45 @@ class GenealogyTools:
         max_results = min(max_results, self.max_results)
 
         # Use the hybrid retriever
+        # Request more chunks than needed since we'll filter by chunk_type
+        # Note: HybridRetriever automatically filters by search_tier (semantic queries only search narrative tier)
         retriever = HybridRetriever()
-        chunks = retriever.retrieve(query=query, top_k=max_results, expand_window=0)
+        chunks = retriever.retrieve(query=query, top_k=max_results * 3, expand_window=0)
+
+        # Filter to only include biographical/narrative chunks (exclude headers, citations, etc.)
+        biographical_chunk_types = ['individual_entry', 'biographical_text', 'narrative_context']
+
+        chunks = [
+            c for c in chunks
+            if c.get('chunk_type') in biographical_chunk_types
+        ][:max_results]  # Take only max_results after filtering
 
         results = []
         for chunk in chunks:
-            # Extract genealogical IDs mentioned in the text
-            # Pattern matches genealogical IDs like "VII.3.a" or "IX.10.b.spouse1"
             text = chunk.get('text_content', '')
+
+            # Extract genealogical IDs from:
+            # 1. The chunk's genealogical_identifier field (primary subject)
+            # 2. Any IDs mentioned in the text content
             id_pattern = r'\b([IVX]+\.\d+\.[a-z]+(?:\.\w+)?)\b'
-            mentioned_ids = re.findall(id_pattern, text)
+            text_mentioned_ids = re.findall(id_pattern, text)
+
+            # Start with the chunk's primary subject if it exists
+            all_ids = []
+            chunk_gen_id = chunk.get('genealogical_identifier')
+            if chunk_gen_id:
+                all_ids.append(chunk_gen_id)
+
+            # Add any IDs found in text that aren't already in the list
+            for gen_id in text_mentioned_ids:
+                if gen_id not in all_ids:
+                    all_ids.append(gen_id)
 
             # Get unique mentioned people with their names
             mentioned_people = []
             seen_ids = set()
 
-            for gen_id in mentioned_ids:
+            for gen_id in all_ids:
                 if gen_id in seen_ids:
                     continue
                 seen_ids.add(gen_id)

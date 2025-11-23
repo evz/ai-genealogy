@@ -113,6 +113,7 @@ Immigration:
 - Look for: emigration terms (emigreerde, vertrokken=departed, geëmigreerd)
 
 IMPORTANT: Try multiple queries with different terms. Dutch historical documents use varied vocabulary.
+IMPORTANT: Do NOT specify max_results parameter - the default (50) is optimized for semantic queries with automatic query expansion.
 
 RESPONSE STYLE:
 - Biographical answers: 2-3 narrative paragraphs weaving events chronologically
