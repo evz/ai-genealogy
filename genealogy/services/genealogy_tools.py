@@ -713,6 +713,69 @@ class GenealogyTools:
             else:
                 return (f"{cousin_degree}th cousin {removed_str}", "cousin")
 
+    def _rerank_chunks(self, query: str, chunks: list, top_k: int = 30) -> list:
+        """
+        Re-rank chunks using LLM to score relevance.
+
+        Args:
+            query: User's search query
+            chunks: List of chunks from initial retrieval
+            top_k: Number of top chunks to return after re-ranking
+
+        Returns:
+            List of re-ranked chunks (top_k highest scoring)
+        """
+        from genealogy.ollama_utils import OllamaClient
+        import logging
+
+        logger = logging.getLogger(__name__)
+        ollama = OllamaClient()
+
+        scored_chunks = []
+
+        for i, chunk in enumerate(chunks):
+            text = chunk.get('text_content', '')
+            # Use first 2000 chars for scoring (enough context, not too slow)
+            text_preview = text[:2000]
+
+            prompt = f"""Rate the relevance of this genealogical text to the query on a scale of 0-10.
+Only respond with a single number (0-10).
+
+Query: {query}
+
+Text: {text_preview}
+
+Relevance score (0-10):"""
+
+            try:
+                # Use qwen2.5 instruct model (not agent version) for simple scoring
+                response = ollama.generate(
+                    model="qwen2.5:14b-instruct-q5_K_M",
+                    prompt=prompt,
+                    system="You are a relevance scorer. Only respond with a number between 0 and 10."
+                )
+                # Extract just the number - handle various formats
+                score_str = response.strip().split()[0]  # Get first token
+                # Remove any non-numeric characters except decimal point
+                score_str = ''.join(c for c in score_str if c.isdigit() or c == '.')
+                score = float(score_str) if score_str else 0.0
+                # Clamp to 0-10 range
+                score = max(0.0, min(10.0, score))
+            except Exception as e:
+                logger.warning(f"Re-ranking failed for chunk {i}: {e}. Using RRF score.")
+                # Fall back to original RRF score (scale to 0-10)
+                score = chunk.get('rrf_score', 0.0) * 100
+
+            scored_chunks.append((chunk, score))
+
+        # Sort by re-ranking score (descending)
+        scored_chunks.sort(key=lambda x: x[1], reverse=True)
+
+        logger.info(f"Re-ranked {len(chunks)} chunks. Top score: {scored_chunks[0][1]:.1f}, Bottom: {scored_chunks[-1][1]:.1f}")
+
+        # Return top_k chunks
+        return [chunk for chunk, score in scored_chunks[:top_k]]
+
     def search_source_text(self, query: str, max_results: int = 50) -> Dict:
         """
         Search genealogical source texts for information using semantic search.
@@ -759,6 +822,12 @@ class GenealogyTools:
             c for c in chunks
             if c.get('chunk_type') in biographical_chunk_types
         ][:max_results]  # Take only max_results after filtering
+
+        # Re-rank chunks using LLM for better precision
+        # Retrieve more initially (max_results), then re-rank down to ~60% of that
+        if len(chunks) > 10:
+            rerank_top_k = max(10, int(max_results * 0.6))  # Return 60% of max_results after re-ranking
+            chunks = self._rerank_chunks(query, chunks, top_k=rerank_top_k)
 
         results = []
         for chunk in chunks:

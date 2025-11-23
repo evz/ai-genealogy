@@ -7,11 +7,13 @@ Tasks are organized by functionality:
 - chunking: Text chunking tasks (book-level hierarchical chunking)
 - extraction: Entity extraction tasks (LLM-based entity extraction)
 - build_genealogy_graph: Build Person/Relationship/Partnership from genealogical IDs
+- conversation: Conversation-related tasks (title generation, etc.)
 """
 
 # Import all tasks for backward compatibility
 from .build_genealogy_graph import build_genealogy_graph
 from .chunking import create_document_chunks
+from .conversation import generate_conversation_title
 from .extraction import extract_entities_from_chunks
 from .ocr import process_document_ocr, process_page_ocr
 from .persist_entities import persist_extracted_entities
@@ -28,4 +30,6 @@ __all__ = [
     "persist_extracted_entities",
     # Graph building tasks
     "build_genealogy_graph",
+    # Conversation tasks
+    "generate_conversation_title",
 ]

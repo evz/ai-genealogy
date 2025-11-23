@@ -401,7 +401,18 @@ class AgentExecutor:
             # Parse response to check if it's a tool call or final answer
             action = self._parse_response(response)
 
-            if action["type"] == "tool_call":
+            if action["type"] == "error":
+                # Parsing error - add error message to context so LLM can correct itself
+                error_msg = action["error"]
+                logger.warning(f"Parse error at iteration {iteration}: {error_msg}")
+
+                context_parts.append(
+                    f"ERROR: {error_msg}\n\nPlease use the correct format:\nTOOL_CALL: <tool_name>\nARGUMENTS: {{...}}\nREASONING: <explanation>"
+                )
+
+                # Continue to next iteration to let LLM retry
+
+            elif action["type"] == "tool_call":
                 # Execute tool
                 tool_name = action["tool"]
                 tool_args = action["arguments"]
@@ -513,7 +524,14 @@ Respond with either TOOL_CALL or ANSWER:"""
 
         # Check if TOOL_CALL appears anywhere in the response (not just at start)
         # LLMs sometimes add thinking/reasoning text before the tool call
-        if "TOOL_CALL:" in response:
+        if "TOOL_CALL" in response:
+            # Check for correct format with colon
+            if "TOOL_CALL:" not in response:
+                return {
+                    "type": "error",
+                    "error": "Invalid tool call format. Use: 'TOOL_CALL: <tool_name>' with a colon after TOOL_CALL"
+                }
+
             lines = response.split("\n")
             tool_name = None
             arguments = {}
@@ -545,6 +563,11 @@ Respond with either TOOL_CALL or ANSWER:"""
                     "tool": tool_name,
                     "arguments": arguments,
                     "reasoning": reasoning
+                }
+            else:
+                return {
+                    "type": "error",
+                    "error": "TOOL_CALL found but no tool name specified. Format: 'TOOL_CALL: <tool_name>'"
                 }
 
         # Check if ANSWER appears anywhere in the response

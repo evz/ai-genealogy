@@ -32,28 +32,18 @@ class TestChatRouting:
         return conv
 
     @pytest.fixture
-    def mock_retriever(self):
-        """Mock the HybridRetriever for RAG tests"""
-        with patch('genealogy.views.chat.HybridRetriever') as mock:
-            retriever = MagicMock()
-            # Mock retrieve() to return empty chunks (routing doesn't need real chunks)
-            retriever.retrieve.return_value = []
-            # Mock build_context() to return empty context
-            retriever.build_context.return_value = ""
-            mock.return_value = retriever
+    def mock_agent(self):
+        """Mock the AgentExecutor for agent tests"""
+        with patch('genealogy.views.chat.AgentExecutor') as mock:
+            agent = MagicMock()
+            # Mock execute_streaming() to return a simple answer event
+            agent.execute_streaming.return_value = iter([
+                {"type": "answer", "answer": "Test response", "tool_calls": []}
+            ])
+            mock.return_value = agent
             yield mock
 
-    @pytest.fixture
-    def mock_ollama(self):
-        """Mock the OllamaClient for generation"""
-        with patch('genealogy.views.chat.OllamaClient') as mock:
-            ollama = MagicMock()
-            # Mock generate_stream() to return a simple response
-            ollama.generate_stream.return_value = iter(["Test", " response"])
-            mock.return_value = ollama
-            yield mock
-
-    def test_merge_query_routes_to_reasoner(self, client, conversation, mock_retriever, mock_ollama):
+    def test_merge_query_routes_to_reasoner(self, client, conversation, mock_agent):
         """
         Merge/identity queries should route to gene-reasoner.
 
@@ -63,8 +53,7 @@ class TestChatRouting:
         response = client.post(
             f'/chat/{conversation.id}/stream/',
             data={
-                'message': 'Are these the same person?',
-                'use_agent': 'false'
+                'message': 'Are these the same person?'
             }
         )
 
@@ -86,7 +75,7 @@ class TestChatRouting:
         assert model_selected == 'gene-reasoner', \
             f"Expected gene-reasoner for merge query, got {model_selected}"
 
-    def test_dutch_merge_query_routes_to_reasoner(self, client, conversation, mock_retriever, mock_ollama):
+    def test_dutch_merge_query_routes_to_reasoner(self, client, conversation, mock_agent):
         """
         Dutch merge queries should also route to gene-reasoner.
 
@@ -95,9 +84,7 @@ class TestChatRouting:
         response = client.post(
             f'/chat/{conversation.id}/stream/',
             data={
-                'message': 'Is dit dezelfde persoon?',
-                'use_agent': 'false'
-            }
+                'message': 'Is dit dezelfde persoon?'}
         )
 
         assert response.status_code == 200
@@ -117,7 +104,7 @@ class TestChatRouting:
         assert model_selected == 'gene-reasoner', \
             f"Expected gene-reasoner for Dutch merge query, got {model_selected}"
 
-    def test_simple_query_routes_to_fast(self, client, conversation, mock_retriever, mock_ollama):
+    def test_simple_query_routes_to_fast(self, client, conversation, mock_agent):
         """
         Simple queries with no special keywords should route to gene-chat-fast.
 
@@ -126,9 +113,7 @@ class TestChatRouting:
         response = client.post(
             f'/chat/{conversation.id}/stream/',
             data={
-                'message': 'Tell me about Jan Pieters',
-                'use_agent': 'false'
-            }
+                'message': 'Tell me about Jan Pieters'}
         )
 
         assert response.status_code == 200
@@ -157,9 +142,7 @@ class TestChatRouting:
         response = client.post(
             f'/chat/{conversation.id}/stream/',
             data={
-                'message': 'Tell me about Jan Pieters',
-                'use_agent': 'true'
-            }
+                'message': 'Tell me about Jan Pieters'}
         )
 
         assert response.status_code == 200
@@ -188,9 +171,7 @@ class TestChatRouting:
         response = client.post(
             f'/chat/{conversation.id}/stream/',
             data={
-                'message': 'Are these the same person?',
-                'use_agent': 'true'
-            }
+                'message': 'Are these the same person?'}
         )
 
         assert response.status_code == 200
@@ -210,7 +191,7 @@ class TestChatRouting:
         assert model_selected == 'gene-reasoner', \
             f"Expected gene-reasoner for merge query in agent mode, got {model_selected}"
 
-    def test_model_selected_event_is_emitted(self, client, conversation, mock_retriever, mock_ollama):
+    def test_model_selected_event_is_emitted(self, client, conversation, mock_agent):
         """
         All queries should emit a model_selected SSE event.
 
@@ -219,9 +200,7 @@ class TestChatRouting:
         response = client.post(
             f'/chat/{conversation.id}/stream/',
             data={
-                'message': 'Test query',
-                'use_agent': 'false'
-            }
+                'message': 'Test query'}
         )
 
         assert response.status_code == 200
