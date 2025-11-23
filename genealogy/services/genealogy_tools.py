@@ -24,7 +24,7 @@ class GenealogyTools:
     """Tools for LLM to interact with genealogy database"""
 
     def __init__(self):
-        self.max_results = 20  # Safety limit for queries
+        self.max_results = 100  # Safety limit for queries
 
     def _generate_name_variations(self, name: str) -> list:
         """
@@ -397,87 +397,6 @@ class GenealogyTools:
             "count": len(results),
             "people": results,
             "truncated": len(people) >= self.max_results
-        }
-
-    def search_by_occupation(self, occupation: str, max_results: int = 10) -> Dict:
-        """
-        Search for people by occupation.
-
-        Args:
-            occupation: Occupation term(s) to search for. Can be a single term or
-                       multiple terms separated by commas for multilingual search
-                       (e.g., "teacher, onderwijzer, meester")
-            max_results: Maximum number of results to return (default: 10)
-
-        Returns:
-            {
-                "count": int,
-                "people": [
-                    {
-                        "id": "uuid",
-                        "display_name": "Bessel van Zanten",
-                        "genealogical_id": "VI.1.n",
-                        "occupation": "spoorwegarbeider",
-                        "birth": {"date": "1841-08-17", "place": "Naarden"}
-                    }
-                ],
-                "truncated": bool
-            }
-        """
-        # Limit max_results for safety
-        max_results = min(max_results, self.max_results)
-
-        # Parse multiple occupation terms (comma-separated)
-        occupation_terms = [term.strip() for term in occupation.split(',')]
-
-        # Build OR query for all occupation terms
-        query = Q()
-        for term in occupation_terms:
-            if term:  # Skip empty strings
-                query |= Q(description__icontains=term)
-
-        # Find occupation events matching any of the search terms
-        occupation_events = Event.objects.filter(
-            event_type='OCCU'
-        ).filter(query).select_related('person').order_by('person__genealogical_id')[:max_results * 2]  # Get more to handle dedup
-
-        results = []
-        seen_person_ids = set()
-
-        for event in occupation_events:
-            person = event.person
-
-            # Skip duplicates (person might have multiple occupation events)
-            if person.id in seen_person_ids:
-                continue
-            seen_person_ids.add(person.id)
-
-            # Stop if we've reached max_results
-            if len(results) >= max_results:
-                break
-
-            # Get birth event
-            birth = Event.objects.filter(
-                person=person,
-                event_type='BIRT'
-            ).first()
-
-            results.append({
-                "id": str(person.id),
-                "display_name": person.full_name,
-                "genealogical_id": person.genealogical_id,
-                "occupation": event.description,
-                "birth": {
-                    "date": birth.date.isoformat() if birth and birth.date else None,
-                    "place": birth.place if birth else None
-                } if birth else None
-            })
-
-        return {
-            "count": len(results),
-            "people": results,
-            "truncated": len(seen_person_ids) >= max_results,
-            "search_terms": occupation_terms  # Show what terms were searched
         }
 
     def get_children(self, person_id: str) -> Dict:

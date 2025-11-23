@@ -60,14 +60,6 @@ class AgentExecutor:
             }
         },
         {
-            "name": "search_by_occupation",
-            "description": "Search for people by occupation. Supports multilingual search - provide multiple occupation terms separated by commas (e.g., 'teacher, onderwijzer' or 'railway worker, spoorwegarbeider'). Documents are in Dutch, so include Dutch translations when searching.",
-            "parameters": {
-                "occupation": "Occupation term(s), comma-separated for multilingual (e.g., 'teacher, onderwijzer, meester')",
-                "max_results": "Maximum results (default 10)"
-            }
-        },
-        {
             "name": "find_relationship",
             "description": "Compute the genealogical relationship between two people by finding their most recent common ancestor. Returns relationship type (e.g., 'second cousin once removed', 'grandparent', 'sibling'), common ancestor details, and generational distances. Use this when asked 'How are X and Y related?' or 'What is the relationship between X and Y?'",
             "parameters": {
@@ -77,9 +69,9 @@ class AgentExecutor:
         },
         {
             "name": "search_source_text",
-            "description": "Search genealogical source texts using semantic search. Use this for cross-cutting queries that aren't about specific people, such as: 'Who lived in Minneapolis?', 'Are there any musicians?', 'Who served in the military?', 'Tell me about people who emigrated to America'. Returns narrative text chunks with relevance scores AND automatically extracts mentioned people with their genealogical IDs, making it easy to follow up with get_person_details.",
+            "description": "Search genealogical source texts using semantic search. Use this for cross-cutting queries that aren't about specific people, such as: 'Who lived in Minneapolis?', 'Are there any musicians?', 'Who served in the military?', 'Who worked in the building trades?', 'Tell me about people who emigrated to America'. Returns narrative text chunks with relevance scores AND automatically extracts mentioned people with their genealogical IDs, making it easy to follow up with get_person_details.",
             "parameters": {
-                "query": "Search query describing what you're looking for (e.g., 'musicians', 'lived in Minneapolis', 'military service')",
+                "query": "Search query describing what you're looking for (e.g., 'musicians', 'lived in Minneapolis', 'military service', 'building trades occupations')",
                 "max_results": "OPTIONAL - Maximum number of text chunks to return (default 50, optimized for semantic queries). Omit this parameter to use the default."
             }
         }

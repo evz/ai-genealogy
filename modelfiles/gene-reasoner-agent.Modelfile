@@ -4,7 +4,7 @@ FROM deepseek-r1:14b
 
 PARAMETER temperature 0.2
 PARAMETER num_ctx 32768
-PARAMETER num_predict 1024
+PARAMETER num_predict 8192
 PARAMETER top_p 0.9
 
 SYSTEM """

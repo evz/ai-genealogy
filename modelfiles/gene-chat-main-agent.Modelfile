@@ -4,7 +4,7 @@ FROM qwen2.5:14b-instruct-q5_K_M
 
 PARAMETER temperature 0.1
 PARAMETER num_ctx 32768
-PARAMETER num_predict 768
+PARAMETER num_predict 4096
 PARAMETER top_p 0.9
 
 SYSTEM """
