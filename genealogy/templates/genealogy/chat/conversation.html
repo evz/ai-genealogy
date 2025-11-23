@@ -115,7 +115,15 @@ function sendMessage(event) {
           const data = JSON.parse(line.slice(6));
 
           if (data.status === 'agent_starting') {
-            contentSpan.innerHTML = '<em class="text-gray-500">🤖 Starting agentic search...</em>';
+            // Create wrapper for reasoning steps
+            contentSpan.innerHTML = '';
+            const reasoningWrapper = document.createElement('div');
+            reasoningWrapper.className = 'reasoning-wrapper space-y-1';
+            const startMsg = document.createElement('em');
+            startMsg.className = 'text-gray-500';
+            startMsg.textContent = '🤖 Starting agentic search...';
+            reasoningWrapper.appendChild(startMsg);
+            contentSpan.appendChild(reasoningWrapper);
           }
           else if (data.status === 'model_selected') {
             // Display which model was selected
@@ -125,10 +133,25 @@ function sendMessage(event) {
                              : modelName === 'reasoner' ? '🔬 Reasoning Model'
                              : data.model;
             console.log(`Model selected: ${data.model}`);
-            contentSpan.innerHTML += `<div class="text-xs text-blue-600 mb-2">${modelLabel}</div>`;
+            let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
+            if (!reasoningWrapper) {
+              reasoningWrapper = document.createElement('div');
+              reasoningWrapper.className = 'reasoning-wrapper space-y-1';
+              contentSpan.appendChild(reasoningWrapper);
+            }
+            const modelDiv = document.createElement('div');
+            modelDiv.className = 'text-xs text-blue-600 mb-2';
+            modelDiv.textContent = modelLabel;
+            reasoningWrapper.appendChild(modelDiv);
           }
           else if (data.status === 'thinking_start') {
-            contentSpan.innerHTML = `<div class="mb-2"><strong class="text-gray-700">🧠 Thinking (iteration ${data.iteration}/${data.max_iterations}):</strong></div><div class="thinking-content text-sm text-gray-600 italic bg-gray-50 p-2 rounded"></div>`;
+            let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
+            if (!reasoningWrapper) {
+              reasoningWrapper = document.createElement('div');
+              reasoningWrapper.className = 'reasoning-wrapper';
+              contentSpan.appendChild(reasoningWrapper);
+            }
+            reasoningWrapper.innerHTML += `<div class="mb-2"><strong class="text-gray-700">🧠 Thinking (iteration ${data.iteration}/${data.max_iterations}):</strong></div><div class="thinking-content text-sm text-gray-600 italic bg-gray-50 p-2 rounded"></div>`;
           }
           else if (data.status === 'thinking_token') {
             // Stream thinking tokens in real-time
@@ -146,25 +169,86 @@ function sendMessage(event) {
             }
           }
           else if (data.status === 'tool_call') {
+            let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
+            if (!reasoningWrapper) {
+              reasoningWrapper = document.createElement('div');
+              reasoningWrapper.className = 'reasoning-wrapper space-y-1';
+              contentSpan.appendChild(reasoningWrapper);
+            }
+            const toolDiv = document.createElement('div');
+            toolDiv.className = 'text-xs text-gray-600 mt-1';
             const argsStr = JSON.stringify(data.arguments);
-            contentSpan.innerHTML += `<div class="text-xs text-gray-600 mt-1">🔧 Calling ${data.tool}(${argsStr})<br><em>${data.reasoning}</em></div>`;
+            toolDiv.innerHTML = `🔧 Calling ${data.tool}(${argsStr})<br><em>${data.reasoning}</em>`;
+            reasoningWrapper.appendChild(toolDiv);
           }
           else if (data.status === 'tool_result') {
+            let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
+            if (!reasoningWrapper) {
+              reasoningWrapper = document.createElement('div');
+              reasoningWrapper.className = 'reasoning-wrapper space-y-1';
+              contentSpan.appendChild(reasoningWrapper);
+            }
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'text-xs text-gray-500 mt-1';
             const resultPreview = JSON.stringify(data.result).substring(0, 100);
-            contentSpan.innerHTML += `<div class="text-xs text-gray-500 mt-1">✅ Result: ${resultPreview}...</div>`;
+            resultDiv.textContent = `✅ Result: ${resultPreview}...`;
+            reasoningWrapper.appendChild(resultDiv);
           }
           else if (data.status === 'retrieving') {
-            contentSpan.innerHTML = '<em class="text-gray-500">🔍 Searching documents...</em>';
+            let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
+            if (!reasoningWrapper) {
+              reasoningWrapper = document.createElement('div');
+              reasoningWrapper.className = 'reasoning-wrapper space-y-1';
+              contentSpan.appendChild(reasoningWrapper);
+            }
+            const retrievingMsg = document.createElement('em');
+            retrievingMsg.className = 'text-gray-500';
+            retrievingMsg.textContent = '🔍 Searching documents...';
+            reasoningWrapper.appendChild(retrievingMsg);
           }
           else if (data.status === 'retrieved') {
-            contentSpan.innerHTML = `<em class="text-gray-500">📚 Found ${data.chunks_count} relevant chunks. Generating answer...</em>`;
+            let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
+            if (!reasoningWrapper) {
+              reasoningWrapper = document.createElement('div');
+              reasoningWrapper.className = 'reasoning-wrapper space-y-1';
+              contentSpan.appendChild(reasoningWrapper);
+            }
+            const retrievedMsg = document.createElement('em');
+            retrievedMsg.className = 'text-gray-500';
+            retrievedMsg.textContent = `📚 Found ${data.chunks_count} relevant chunks. Generating answer...`;
+            reasoningWrapper.appendChild(retrievedMsg);
           }
           else if (data.status === 'generating') {
-            contentSpan.innerHTML = '';
+            // Convert reasoning wrapper to collapsible details
+            let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
+            if (reasoningWrapper) {
+              const reasoningContent = reasoningWrapper.innerHTML;
+              const details = document.createElement('details');
+              details.className = 'mb-3 text-sm border-l-2 border-gray-300 pl-3';
+              details.innerHTML = `
+                <summary class="cursor-pointer text-gray-600 hover:text-gray-800 mb-2">
+                  🔍 View reasoning steps
+                </summary>
+                <div class="mt-2 space-y-1">
+                  ${reasoningContent}
+                </div>
+              `;
+              contentSpan.replaceChild(details, reasoningWrapper);
+            }
+            // Create answer div
+            const answerDiv = document.createElement('div');
+            answerDiv.className = 'answer-content';
+            contentSpan.appendChild(answerDiv);
           }
           else if (data.token) {
             fullText += data.token;
-            contentSpan.textContent = fullText;
+            // Append to answer div if it exists, otherwise to contentSpan
+            const answerDiv = contentSpan.querySelector('.answer-content');
+            if (answerDiv) {
+              answerDiv.textContent = fullText;
+            } else {
+              contentSpan.textContent = fullText;
+            }
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
           }
           else if (data.done) {

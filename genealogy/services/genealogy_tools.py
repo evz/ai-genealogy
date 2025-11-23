@@ -133,13 +133,13 @@ class GenealogyTools:
             # Not a valid UUID
             return None
 
-    def search_person_by_name(self, name: str, max_results: int = 10) -> Dict:
+    def search_person_by_name(self, name: str, max_results: int = None) -> Dict:
         """
         Search for people by name with disambiguating details.
 
         Args:
             name: Full or partial name to search for (e.g., 'Pieter van Zanten', 'Aart')
-            max_results: Maximum number of results to return (default: 10)
+            max_results: Maximum number of results to return (default: all matches)
 
         Returns:
             {
@@ -157,13 +157,16 @@ class GenealogyTools:
                 "truncated": bool
             }
         """
-        # Limit max_results for safety
-        max_results = min(max_results, self.max_results)
-
         # Search using flexible name matching
-        people = Person.objects.filter(
+        query = Person.objects.filter(
             self._build_name_query(name)
-        ).order_by('genealogical_id')[:max_results]
+        ).order_by('genealogical_id')
+
+        # Only apply limit if max_results is specified
+        if max_results is not None:
+            people = query[:max_results]
+        else:
+            people = query
 
         results = []
         for person in people:
@@ -203,7 +206,7 @@ class GenealogyTools:
         return {
             "count": len(results),
             "people": results,
-            "truncated": len(people) >= max_results
+            "truncated": max_results is not None and len(people) >= max_results
         }
 
     def get_person_details(self, person_id: str) -> Dict:

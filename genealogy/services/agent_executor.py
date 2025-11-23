@@ -23,61 +23,61 @@ class AgentExecutor:
     AVAILABLE_TOOLS = [
         {
             "name": "search_person_by_name",
-            "description": "Search for people by name. Returns list with disambiguating details (birth, death, parents).",
+            "description": "Search for people by name. Returns all matches with birth, death, parents.",
             "parameters": {
-                "name": "Person's name (full or partial)",
-                "max_results": "Maximum results (default 10)"
+                "name": "Person's name",
+                "max_results": "Optional - max results (default: all)"
             }
         },
         {
             "name": "get_person_details",
-            "description": "Get detailed information about a specific person by their ID or genealogical identifier. Returns structured events (birth, death, marriage, etc.) AND the full narrative source text from the original document, which often contains additional context like military service, orphan status, occupations, and life details not captured in structured events.",
+            "description": "Get detailed info about a person by ID. Returns structured events AND narrative source text.",
             "parameters": {
-                "person_id": "UUID from search results 'id' field (e.g., 'abc-123-def') OR genealogical_id field (e.g., 'VI.1.n'). NEVER use display_name or person's full name."
+                "person_id": "UUID or genealogical_id (e.g., 'VI.1.n'). Use ID from search results, not person's name."
             }
         },
         {
             "name": "search_by_birth_year",
-            "description": "Search for people by name and birth year range to disambiguate.",
+            "description": "Search by name and birth year range to disambiguate.",
             "parameters": {
                 "name": "Person's name",
-                "birth_year_min": "Minimum birth year (optional)",
-                "birth_year_max": "Maximum birth year (optional)"
+                "birth_year_min": "Min year (optional)",
+                "birth_year_max": "Max year (optional)"
             }
         },
         {
             "name": "get_children",
-            "description": "Get all children of a specific person.",
+            "description": "Get all children of a person.",
             "parameters": {
-                "person_id": "UUID from search results 'id' field OR 'genealogical_id' field. NEVER use person's name."
+                "person_id": "UUID or genealogical_id. Use ID, not name."
             }
         },
         {
             "name": "get_parents",
-            "description": "Get parents of a specific person.",
+            "description": "Get parents of a person.",
             "parameters": {
-                "person_id": "UUID from search results 'id' field OR 'genealogical_id' field. NEVER use person's name."
+                "person_id": "UUID or genealogical_id. Use ID, not name."
             }
         },
         {
             "name": "find_relationship",
-            "description": "Compute the genealogical relationship between two people by finding their most recent common ancestor. Returns relationship type (e.g., 'second cousin once removed', 'grandparent', 'sibling'), common ancestor details, and generational distances. Use this when asked 'How are X and Y related?' or 'What is the relationship between X and Y?'",
+            "description": "Find genealogical relationship between two people. Returns relationship type, common ancestor, generational distances.",
             "parameters": {
-                "person_id_1": "UUID or genealogical_id of first person. NEVER use person's name.",
-                "person_id_2": "UUID or genealogical_id of second person. NEVER use person's name."
+                "person_id_1": "UUID or genealogical_id of first person",
+                "person_id_2": "UUID or genealogical_id of second person"
             }
         },
         {
             "name": "search_source_text",
-            "description": "Search genealogical source texts using semantic search. Use this for cross-cutting queries that aren't about specific people, such as: 'Who lived in Minneapolis?', 'Are there any musicians?', 'Who served in the military?', 'Who worked in the building trades?', 'Tell me about people who emigrated to America'. Returns narrative text chunks with relevance scores AND automatically extracts mentioned people with their genealogical IDs, making it easy to follow up with get_person_details.",
+            "description": "Semantic search of genealogical texts. Use for queries like 'Who lived in X?', 'Who worked as Y?'. Returns text chunks with mentioned people and their IDs.",
             "parameters": {
-                "query": "Search query describing what you're looking for (e.g., 'musicians', 'lived in Minneapolis', 'military service', 'building trades occupations')",
-                "max_results": "OPTIONAL - Maximum number of text chunks to return (default 50, optimized for semantic queries). Omit this parameter to use the default."
+                "query": "Search query",
+                "max_results": "Optional - max chunks (default 50)"
             }
         }
     ]
 
-    def __init__(self, model: str = "gene-chat-main", max_iterations: int = 10, timeout: int = 300):
+    def __init__(self, model: str = "gene-chat-main", max_iterations: int = 20, timeout: int = 300):
         """
         Initialize agent executor.
 
@@ -478,8 +478,8 @@ class AgentExecutor:
         """
         Build prompt for agentic workflow.
 
-        NOTE: Core instructions (tool protocol, error recovery, workflows) are in the
-        model's SYSTEM prompt. This prompt provides only the current state.
+        Provides current query, available tools, call history, and accumulated context.
+        Core instructions are in the model's SYSTEM prompt.
         """
 
         tools_description = "\n".join([
@@ -494,22 +494,16 @@ class AgentExecutor:
 
         return f"""USER QUERY: {user_query}
 
-AVAILABLE TOOLS:
+TOOLS:
 {tools_description}
 
-PREVIOUS TOOL CALLS ({len(tool_calls_made)}/{self.max_iterations} calls made):
+PREVIOUS CALLS ({len(tool_calls_made)}/{self.max_iterations}):
 {previous_tools}
 
-CURRENT CONTEXT:
-{context if context else "No context yet - search for information using tools."}
+CONTEXT:
+{context if context else "No context yet."}
 
-IMPORTANT REMINDERS:
-- Use conversation context to resolve pronouns (e.g., "his children" = the person just discussed)
-- Extract "id" or "genealogical_id" from search results before calling other tools
-- If you receive a DUPLICATE CALL error referencing iteration N, review that iteration's result
-- You have {self.max_iterations - len(tool_calls_made)} tool calls remaining
-
-Respond with either TOOL_CALL or ANSWER:"""
+Respond with TOOL_CALL or ANSWER:"""
 
     def _parse_response(self, response: str) -> Dict:
         """

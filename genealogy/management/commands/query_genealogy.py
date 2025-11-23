@@ -146,7 +146,7 @@ class Command(BaseCommand):
             self.stdout.write(f"\n🤖 Using agentic workflow with {model}...\n")
 
             # Initialize agent
-            agent = AgentExecutor(model=model, max_iterations=10, timeout=300)
+            agent = AgentExecutor(model=model, max_iterations=20, timeout=300)
 
             # Execute with initial context from RAG
             result = agent.execute(user_query=question, initial_context=context)

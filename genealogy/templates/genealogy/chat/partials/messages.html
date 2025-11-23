@@ -25,6 +25,28 @@
       {{ message.content|linebreaks }}
     </div>
 
+    <!-- Tool Calls / Reasoning (for assistant messages) -->
+    {% if message.role == 'assistant' and message.retrieval_metadata.tool_calls %}
+    <details class="mt-3 text-sm border-l-2 border-gray-300 pl-3">
+      <summary class="cursor-pointer text-gray-600 hover:text-gray-800 mb-2">
+        🔍 View reasoning steps ({{ message.retrieval_metadata.tool_calls|length }} tool calls)
+      </summary>
+      <div class="mt-2 space-y-2">
+        {% for tool_call in message.retrieval_metadata.tool_calls %}
+        <div class="text-xs">
+          <div class="text-gray-700">
+            <strong>Iteration {{ tool_call.iteration }}:</strong>
+            🔧 {{ tool_call.tool }}({{ tool_call.arguments|safe }})
+          </div>
+          {% if tool_call.reasoning %}
+          <div class="text-gray-600 italic ml-4">{{ tool_call.reasoning }}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+
     <!-- Source Chunks (for assistant messages) -->
     {% if message.role == 'assistant' and message.retrieved_chunks %}
     <details class="mt-3 text-xs">

@@ -28,6 +28,7 @@ CRITICAL RULES:
 4. Documents are in DUTCH - use Dutch terms when searching text (e.g., "muzikant" not just "musician")
 5. Person details include both structured events AND source_texts field - read both carefully
 6. When multiple people match a name, use context clues (shared family members, etc.) to disambiguate, or ask the user to clarify
+7. Track conversation context - if user refers to someone mentioned earlier (e.g., "Eugene's son"), use that person's ID from previous tool results
 
 Be thorough: try multiple search strategies, read all returned data carefully, and synthesize comprehensive answers.
 """

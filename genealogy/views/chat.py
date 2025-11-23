@@ -91,7 +91,7 @@ def stream_message(request, conversation_id):
             # Get conversation history (shared by both modes)
             history = conversation.messages.filter(
                 created_at__lt=user_msg.created_at
-            ).order_by('-created_at')[:10]  # Last 10 messages
+            ).order_by('-created_at')[:50]  # Last 50 messages (25 exchanges)
 
             # Build conversation history text
             history_text = ""
@@ -121,7 +121,7 @@ def stream_message(request, conversation_id):
 {history_text if history_text else "No previous messages"}"""
 
             # Initialize agent
-            agent = AgentExecutor(model=selected_model, max_iterations=10, timeout=300)
+            agent = AgentExecutor(model=selected_model, max_iterations=20, timeout=300)
 
             # We'll still need chunks for saving metadata, so retrieve them after the agent finishes
             chunks = []
