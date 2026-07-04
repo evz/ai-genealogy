@@ -483,6 +483,11 @@ class TextChunk(models.Model):
 
     # Content
     text_content = models.TextField(help_text="The actual text content of this chunk")
+    text_summary = models.TextField(
+        blank=True,
+        null=True,
+        help_text="LLM-generated summary for chunks over 1000 chars. Used in agent responses to reduce context size."
+    )
     chunk_type = models.CharField(max_length=30, choices=CHUNK_TYPES, default="unknown")
 
     # Position information

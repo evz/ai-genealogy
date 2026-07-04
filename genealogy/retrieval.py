@@ -358,6 +358,7 @@ Return ONLY a comma-separated list of search terms, no categories or explanation
         SELECT
             c.id,
             c.text_content,
+            c.text_summary,
             c.document_id,
             c.sequence_number,
             c.start_page,
@@ -374,7 +375,7 @@ Return ONLY a comma-separated list of search terms, no categories or explanation
             SUM(rrf.score) AS rrf_score
         FROM   rrf
         JOIN   genealogy_textchunk c ON c.id = rrf.id
-        GROUP  BY c.id, c.text_content, c.document_id, c.sequence_number,
+        GROUP  BY c.id, c.text_content, c.text_summary, c.document_id, c.sequence_number,
                   c.start_page, c.end_page, c.chunk_type, c.genealogical_identifier,
                   c.subject, c.generation_number, c.generation_header, c.family_groups,
                   c.extracted_people, c.extracted_events, c.extracted_relationships

@@ -19,6 +19,7 @@ from .conversation import generate_conversation_title
 from .extraction import extract_entities_from_chunks
 from .ocr import process_document_ocr, process_page_ocr
 from .persist_entities import persist_extracted_entities
+from .summarization import summarize_chunk, summarize_all_chunks
 
 __all__ = [
     # OCR tasks
@@ -36,4 +37,7 @@ __all__ = [
     "generate_conversation_title",
     # Chat agent tasks
     "process_chat_message",
+    # Summarization tasks
+    "summarize_chunk",
+    "summarize_all_chunks",
 ]

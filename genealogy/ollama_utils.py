@@ -106,10 +106,20 @@ class OllamaClient:
 
         return llm_models
 
-    def generate(self, model: str, prompt: str, **kwargs) -> str | None:
-        """Generate text using specified model"""
+    def generate(self, model: str, prompt: str, system: str = None, **kwargs) -> str | None:
+        """
+        Generate text using specified model.
+
+        Args:
+            model: Model name to use
+            prompt: User prompt
+            system: Optional system prompt to set behavior
+            **kwargs: Additional ollama parameters (temperature, num_ctx, etc.)
+        """
         try:
             payload = {"model": model, "prompt": prompt, "stream": False, **kwargs}
+            if system:
+                payload["system"] = system
 
             response = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=self.timeout)
 
@@ -123,11 +133,21 @@ class OllamaClient:
             logger.exception(f"Error generating text: {e}")
             return None
 
-    def generate_stream(self, model: str, prompt: str, **kwargs):
-        """Generate text using specified model with streaming response"""
+    def generate_stream(self, model: str, prompt: str, system: str = None, **kwargs):
+        """
+        Generate text using specified model with streaming response.
+
+        Args:
+            model: Model name to use
+            prompt: User prompt
+            system: Optional system prompt to set behavior
+            **kwargs: Additional ollama parameters (temperature, num_ctx, etc.)
+        """
         import json
         try:
             payload = {"model": model, "prompt": prompt, "stream": True, **kwargs}
+            if system:
+                payload["system"] = system
 
             response = requests.post(
                 f"{self.base_url}/api/generate",

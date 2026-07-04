@@ -833,14 +833,29 @@ Relevance score (0-10):"""
             chunks = self._rerank_chunks(query, chunks, top_k=rerank_top_k)
 
         results = []
-        for chunk in chunks:
-            text = chunk.get('text_content', '')
+        total_original_chars = 0
+        total_returned_chars = 0
 
-            # Extract genealogical IDs from:
+        for chunk in chunks:
+            full_text = chunk.get('text_content', '')
+            summary = chunk.get('text_summary')
+
+            # Use summary if available, otherwise use full text
+            # This reduces context size for better LLM comprehension
+            if summary:
+                text = summary
+            else:
+                text = full_text
+
+            total_original_chars += len(full_text)
+            total_returned_chars += len(text)
+
+            # Extract genealogical IDs from the FULL text (not summary)
+            # to ensure we don't miss any IDs:
             # 1. The chunk's genealogical_identifier field (primary subject)
             # 2. Any IDs mentioned in the text content
             id_pattern = r'\b([IVX]+\.\d+\.[a-z]+(?:\.\w+)?)\b'
-            text_mentioned_ids = re.findall(id_pattern, text)
+            text_mentioned_ids = re.findall(id_pattern, full_text)
 
             # Start with the chunk's primary subject if it exists
             all_ids = []
@@ -877,8 +892,18 @@ Relevance score (0-10):"""
                 "genealogical_id": chunk.get('genealogical_identifier', ''),
                 "page_range": f"{chunk.get('start_page', '?')}-{chunk.get('end_page', '?')}",
                 "score": float(chunk.get('rrf_score', 0.0)),
-                "mentioned_people": mentioned_people
+                "mentioned_people": mentioned_people,
+                "is_summarized": bool(summary)
             })
+
+        # Log context reduction
+        if total_original_chars > 0:
+            reduction_pct = (1 - total_returned_chars / total_original_chars) * 100
+            logger.info(
+                f"search_source_text: {len(results)} results, "
+                f"context {total_original_chars} -> {total_returned_chars} chars "
+                f"({reduction_pct:.1f}% reduction)"
+            )
 
         return {
             "count": len(results),

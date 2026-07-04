@@ -118,6 +118,17 @@ class TestGenealogyTools(TestCase):
         self.assertEqual(result["count"], 1)
         self.assertTrue(result["truncated"])
 
+    def test_search_person_by_name_no_limit(self):
+        """Test search returns all matches when max_results not specified"""
+        result = self.tools.search_person_by_name("van Zanten")
+
+        # Should find both Pieter and Anna van Zanten without limit
+        self.assertEqual(result["count"], 2)
+        self.assertFalse(result["truncated"])
+        names = [p["display_name"] for p in result["people"]]
+        self.assertIn("Pieter van Zanten", names)
+        self.assertIn("Anna van Zanten", names)
+
     def test_get_person_details_by_genealogical_id(self):
         """Test getting person details by genealogical ID"""
         result = self.tools.get_person_details("II.3.a")
