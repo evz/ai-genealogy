@@ -4,8 +4,15 @@ Routing strategies for selecting optimal LLM models based on query characteristi
 Each strategy implements the RoutingStrategy protocol and can be swapped transparently.
 """
 
+import os
 import re
 from typing import Protocol, List
+
+
+# Model configuration from environment variables
+MODEL_FAST = os.getenv("LLM_MODEL_FAST", "llama3.1:8b")
+MODEL_MAIN = os.getenv("LLM_MODEL_MAIN", "qwen2.5:14b-instruct-q5_K_M")
+MODEL_REASONER = os.getenv("LLM_MODEL_REASONER", "deepseek-r1:14b")
 
 
 class RoutingStrategy(Protocol):
@@ -30,11 +37,16 @@ class KeywordBasedStrategy:
     """
     Routes based on keyword patterns in the query.
 
-    - Detects merge/conflict/identity queries → gene-reasoner
-    - Estimates complexity from query length and chunk count → gene-chat-main
-    - Default to fast model for simple queries → gene-chat-fast
+    - Detects merge/conflict/identity queries → deepseek-r1:14b (reasoning)
+    - Estimates complexity from query length and chunk count → qwen2.5:14b (main)
+    - Default to fast model for simple queries → llama3.1:8b
 
     Supports both English and Dutch queries.
+
+    Model mappings (base models, no custom Modelfiles):
+    - Fast: llama3.1:8b
+    - Main: qwen2.5:14b-instruct-q5_K_M
+    - Reasoner: deepseek-r1:14b
     """
 
     # Keywords that indicate merge/conflict/identity resolution tasks
@@ -67,23 +79,40 @@ class KeywordBasedStrategy:
     def choose_model(self, query: str, chunks: List[dict] | None = None, use_agent: bool = False) -> str:
         """Choose model based on keyword patterns and complexity heuristics"""
 
+        # 0. Check for manual reasoning model override
+        # User can type "use reasoning model" or "@reasoning" to force deepseek-r1
+        if self._is_reasoning_override(query):
+            return MODEL_REASONER
+
         # 1. Check for merge/conflict/identity resolution queries FIRST
-        # (these should use gene-reasoner even in agent mode)
+        # (these should use deepseek-r1 even in agent mode)
         if self._is_merge_or_conflict_query(query):
-            return "gene-reasoner"
+            return MODEL_REASONER
 
         # 2. If using agent mode, use main model (agents need good reasoning)
         if use_agent:
-            return "gene-chat-main"
+            return MODEL_MAIN
 
         # 3. Estimate complexity based on query and retrieved chunks
         complexity = self._estimate_complexity(query, chunks)
 
         # 4. Route based on complexity
         if complexity >= 2:
-            return "gene-chat-main"
+            return MODEL_MAIN
 
-        return "gene-chat-fast"
+        return MODEL_FAST
+
+    def _is_reasoning_override(self, query: str) -> bool:
+        """Check if user explicitly requested reasoning model"""
+        q = query.lower()
+        patterns = [
+            r"@reasoning\b",
+            r"\buse reasoning model\b",
+            r"\buse reasoning\b",
+            r"\breasoning model\b",
+            r"@reasoner\b",
+        ]
+        return any(re.search(pat, q) for pat in patterns)
 
     def _is_merge_or_conflict_query(self, query: str) -> bool:
         """Check if query matches merge/conflict keywords"""
@@ -123,23 +152,23 @@ class KeywordBasedStrategy:
 
 class AgentOnlyStrategy:
     """
-    Simple strategy for testing: always routes agent queries to gene-reasoner,
-    everything else to gene-chat-fast.
+    Simple strategy for testing: always routes agent queries to reasoner model,
+    everything else to fast model.
     """
 
     def choose_model(self, query: str, chunks: List[dict] | None = None, use_agent: bool = False) -> str:
-        return "gene-reasoner" if use_agent else "gene-chat-fast"
+        return MODEL_REASONER if use_agent else MODEL_FAST
 
 
 class AlwaysFastStrategy:
     """Testing strategy: always use fast model"""
 
     def choose_model(self, query: str, chunks: List[dict] | None = None, use_agent: bool = False) -> str:
-        return "gene-chat-fast"
+        return MODEL_FAST
 
 
 class AlwaysMainStrategy:
     """Testing strategy: always use main model"""
 
     def choose_model(self, query: str, chunks: List[dict] | None = None, use_agent: bool = False) -> str:
-        return "gene-chat-main"
+        return MODEL_MAIN

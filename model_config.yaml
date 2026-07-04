@@ -1,0 +1,203 @@
+# Model configuration for genealogy extraction system
+# Based on analysis in USING_RAG_vs_LONG_CONTEXT.md
+
+models:
+  # Dutch accuracy specialist - best for entity extraction and RAG answers
+  aya_35b:
+    name: "aya:35b-23"
+    context_length: 32768  # Push beyond default 8K
+    quantization: "q4_0"
+    vram_usage: "~22GB"
+    strengths:
+      - "Best Dutch comprehension"
+      - "Excellent entity extraction"
+      - "Bilingual NL↔EN capability"
+    use_cases:
+      - "RAG-based Q&A"
+      - "Entity extraction from chunks"
+      - "Dutch genealogy text analysis"
+    ollama_options:
+      num_ctx: 32768
+      num_batch: 96
+      temperature: 0.0
+      num_gpu: 1
+
+  # Long context workhorse - 128K context, good instruction following
+  llama_8b:
+    name: "llama3.1:8b"
+    context_length: 131072  # 128K
+    quantization: "q4_0"
+    vram_usage: "~8GB"
+    strengths:
+      - "Large context window"
+      - "Strong instruction following"
+      - "Good multilingual support"
+      - "Fast and responsive"
+    use_cases:
+      - "Long document analysis"
+      - "Multi-hop reasoning"
+      - "Fallback for large contexts"
+    ollama_options:
+      num_ctx: 65536
+      num_batch: 256
+      temperature: 0.2
+      num_gpu: 1
+
+  # Instruction following specialist - excellent for structured output
+  qwen_7b:
+    name: "qwen2.5:7b"
+    context_length: 131072  # 128K
+    quantization: "q4_0"
+    vram_usage: "~5GB"
+    strengths:
+      - "Excellent instruction following"
+      - "JSON/structured output"
+      - "Efficient VRAM usage"
+      - "Cross-lingual capability"
+    use_cases:
+      - "Structured data extraction"
+      - "API responses"
+      - "JSON formatting"
+    ollama_options:
+      num_ctx: 65536
+      num_batch: 256
+      temperature: 0.1
+      format: "json"
+
+  # Heavy reasoning model - for complex genealogical relationships
+  mistral_12b:
+    name: "mistral-nemo:12b"
+    context_length: 131072  # 128K
+    quantization: "q4_0"
+    vram_usage: "~12GB"
+    strengths:
+      - "Strong reasoning capability"
+      - "Complex relationship analysis"
+      - "Good at inference"
+    use_cases:
+      - "Family relationship analysis"
+      - "Complex genealogical reasoning"
+      - "Multi-generation queries"
+    ollama_options:
+      num_ctx: 65536
+      num_batch: 192
+      temperature: 0.3
+
+
+# Query routing configuration
+routing:
+  # Thresholds for decision making
+  min_rag_passages: 3
+  max_rag_context_chars: 8000
+  long_context_threshold_chars: 32000
+
+  # Model selection rules
+  rules:
+    # Use aya for Dutch accuracy and entity extraction
+    dutch_content:
+      model: "aya_35b"
+      conditions:
+        - "language == 'nl'"
+        - "method == 'rag'"
+
+    # Use aya for structured entity extraction
+    entity_extraction:
+      model: "aya_35b"
+      conditions:
+        - "task_type == 'extraction'"
+
+    # Use qwen for structured output
+    structured_output:
+      model: "qwen_7b"
+      conditions:
+        - "output_format == 'json'"
+        - "context_size < 32000"
+
+    # Use llama for long context fallback
+    long_context_fallback:
+      model: "llama_8b"
+      conditions:
+        - "method == 'long_context'"
+        - "context_size < 65000"
+
+    # Use mistral for relationship reasoning
+    relationship_queries:
+      model: "mistral_12b"
+      conditions:
+        - "query_type == 'relationship'"
+        - "complexity == 'high'"
+
+# Performance tuning
+performance:
+  # VRAM management (32GB total)
+  vram_allocation:
+    primary_model: 22  # GB for main model (aya)
+    secondary_model: 8   # GB for fallback (llama/qwen)
+    system_reserve: 2    # GB for system
+
+  # Context window optimization
+  context_sizing:
+    rag_optimal: 8000      # chars - fits well in aya:35b-23
+    rag_maximum: 24000     # chars - max for aya extended context
+    long_context_start: 32000  # chars - when to switch to long models
+    long_context_max: 200000   # chars - practical limit for 65K tokens
+
+  # Rate limiting
+  request_delays:
+    between_requests: 0.5   # seconds
+    heavy_model_delay: 2.0  # seconds for 70B model
+    error_backoff: 5.0      # seconds after errors
+
+# Testing configuration
+testing:
+  niah_tests:
+    context_sizes: [8192, 16384, 32768, 65536]
+    needle_positions: ["10%", "25%", "50%", "75%", "90%"]
+    models_to_test: ["aya:35b-23", "llama3.1:8b", "qwen2.5:7b", "mistral-nemo:12b"]
+
+  performance_benchmarks:
+    genealogy_queries:
+      - "What is [person]'s birth date?"
+      - "Where was [person] born?"
+      - "How is [person1] related to [person2]?"
+      - "Summarize the [generation] generation"
+      - "What places are mentioned for [family]?"
+
+    expected_approaches:
+      biographical: "rag"
+      geographical: "rag"
+      relationship: "long_context"
+      summary: "long_context"
+      extraction: "rag"
+
+# Language configuration
+languages:
+  detection:
+    dutch_indicators: ["van", "de", "der", "den", "kinderen", "geboren", "overleden", "gedoopt", "getrouwd"]
+    english_indicators: ["the", "and", "of", "children", "born", "died", "baptized", "married"]
+
+  response_templates:
+    dutch:
+      system_prompt: "Antwoord in het Nederlands. Citeer Nederlandse namen exact zoals ze in de tekst staan."
+      no_info: "Geen informatie gevonden in de beschikbare teksten."
+
+    english:
+      system_prompt: "Answer in English. Quote Dutch names verbatim as they appear in the text."
+      no_info: "No information found in the available texts."
+
+# Integration settings
+integration:
+  ollama:
+    host: "the-area.local"
+    port: 11434
+    timeout: 600  # seconds for long contexts
+
+  rag_system:
+    embedding_model: "zylonai/multilingual-e5-large:latest"
+    vector_top_k: 25
+    trigram_top_k: 20
+    phonetic_top_k: 40
+    rrf_weights:
+      vector: 60
+      trigram: 60
+      phonetic: 80
