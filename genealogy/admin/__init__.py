@@ -1,4 +1,5 @@
 # Import all admin modules to register them with Django admin
+from .archive import ArchiveAdmin
 from .book_section import BookSectionAdmin
 from .conversation import ConversationAdmin, MessageAdmin
 from .document import DocumentAdmin
@@ -13,6 +14,7 @@ from .relationship_admin import RelationshipAdmin
 from .textchunk import TextChunkAdmin
 
 __all__ = [
+    'ArchiveAdmin',
     'BookSectionAdmin',
     'ConversationAdmin',
     'DocumentAdmin',

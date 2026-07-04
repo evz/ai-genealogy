@@ -264,6 +264,33 @@ class DocumentPage(models.Model):
         return bool(self.image_file and not self.ocr_completed)
 
 
+class Archive(models.Model):
+    """A genealogical archive referenced in source citations."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    abbreviation = models.CharField(
+        max_length=20, unique=True, db_index=True,
+        help_text="Short code used in citations (e.g. RAR, GAA, NHA)"
+    )
+    name = models.CharField(max_length=255, help_text="Full archive name")
+    address = models.TextField(blank=True)
+    city = models.CharField(max_length=100, blank=True)
+    country = models.CharField(max_length=100, blank=True, default="Netherlands")
+    phone = models.CharField(max_length=50, blank=True)
+    website = models.URLField(blank=True)
+    opening_hours = models.TextField(blank=True)
+    notes = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["abbreviation"]
+
+    def __str__(self):
+        return f"{self.abbreviation} — {self.name}"
+
+
 class Place(models.Model):
     """Geographic location"""
 
