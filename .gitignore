@@ -150,3 +150,17 @@ datasets/
 
 # Pre-commit
 .pre-commit-config.yaml
+
+# Local scratch scripts, experiments, and generated outputs
+/coverage.json
+/prompt_experiment_output.txt
+/streaming_prompt_output.txt
+/family_tree.png
+/combine_scans.py
+/generate_family_tree.py
+/evaluate_models.py
+/evaluate_wiki_models.py
+/test_ancestry_tracing.py
+/test_model_evaluation.py
+/example_cte.sql
+research/*.pdf
