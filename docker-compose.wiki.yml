@@ -1,0 +1,41 @@
+services:
+  wiki-db:
+    image: mariadb:11
+    environment:
+      MYSQL_ROOT_PASSWORD: ${WIKI_DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${WIKI_DB_NAME:-wikidb}
+      MYSQL_USER: ${WIKI_DB_USER:-wikiuser}
+      MYSQL_PASSWORD: ${WIKI_DB_PASSWORD}
+    volumes:
+      - wiki_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  wiki:
+    image: mediawiki:lts
+    ports:
+      - "8081:80"
+    depends_on:
+      wiki-db:
+        condition: service_healthy
+    environment:
+      WIKI_DB_HOST: wiki-db
+      WIKI_DB_NAME: ${WIKI_DB_NAME:-wikidb}
+      WIKI_DB_USER: ${WIKI_DB_USER:-wikiuser}
+      WIKI_DB_PASSWORD: ${WIKI_DB_PASSWORD}
+      WIKI_ADMIN_USER: ${WIKI_ADMIN_USER:-admin}
+      WIKI_ADMIN_PASS: ${WIKI_ADMIN_PASS}
+      WIKI_SITE_NAME: ${WIKI_SITE_NAME:-Van Zanten Family History}
+    volumes:
+      - wiki_images:/var/www/html/images
+      - wiki_config:/wiki-config
+      - ./mediawiki/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/bash", "/entrypoint.sh"]
+
+volumes:
+  wiki_db_data:
+  wiki_images:
+  wiki_config:

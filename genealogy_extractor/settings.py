@@ -162,6 +162,11 @@ OLLAMA_HOST = os.getenv("OLLAMA_HOST", "localhost")
 OLLAMA_PORT = int(os.getenv("OLLAMA_PORT", "11434"))
 OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text-v2-moe")
 
+# MediaWiki configuration (for family wiki seeding)
+WIKI_API_URL = os.getenv("WIKI_API_URL", "http://host.docker.internal:8081/api.php")
+WIKI_ADMIN_USER = os.getenv("WIKI_ADMIN_USER", "admin")
+WIKI_ADMIN_PASS = os.getenv("WIKI_ADMIN_PASS", "")
+
 # NER Model Configuration
 NER_MODEL_PATH = os.getenv("NER_MODEL_PATH", "models/genealogy_ner_20250920_150219")
 

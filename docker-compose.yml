@@ -27,6 +27,8 @@ services:
     depends_on:
       - db
       - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     deploy:
