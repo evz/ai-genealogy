@@ -8,10 +8,12 @@ Tasks are organized by functionality:
 - extraction: Entity extraction tasks (LLM-based entity extraction)
 - build_genealogy_graph: Build Person/Relationship/Partnership from genealogical IDs
 - conversation: Conversation-related tasks (title generation, etc.)
+- chat_agent: Chat agent processing with SSE streaming
 """
 
 # Import all tasks for backward compatibility
 from .build_genealogy_graph import build_genealogy_graph
+from .chat_agent import process_chat_message
 from .chunking import create_document_chunks
 from .conversation import generate_conversation_title
 from .extraction import extract_entities_from_chunks
@@ -32,4 +34,6 @@ __all__ = [
     "build_genealogy_graph",
     # Conversation tasks
     "generate_conversation_title",
+    # Chat agent tasks
+    "process_chat_message",
 ]

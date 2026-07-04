@@ -24,9 +24,33 @@
   <div class="flex-1 flex flex-col">
     <!-- Header -->
     <div class="bg-white border-b border-gray-200 p-4">
-      <h2 class="text-lg font-semibold text-gray-800">
-        {{ conversation.title|default:"New Conversation" }}
-      </h2>
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-semibold text-gray-800">
+          {{ conversation.title|default:"New Conversation" }}
+        </h2>
+
+        <!-- Prompt Template Selector -->
+        <div class="flex items-center gap-3">
+          <label for="templateSelect" class="text-sm text-gray-600">
+            Prompt Template:
+          </label>
+          <select id="templateSelect"
+                  class="text-sm border border-gray-300 rounded px-3 py-1.5 focus:outline-none focus:border-blue-500"
+                  onchange="changeTemplate(this.value)">
+            <option value="default" {% if not conversation.prompt_template_override %}selected{% endif %}>
+              Default (Active: v{{ current_template.version }})
+            </option>
+            {% for template in available_templates %}
+              <option value="{{ template.id }}"
+                      {% if conversation.prompt_template_override.id == template.id %}selected{% endif %}>
+                v{{ template.version }}{% if template.is_active %} ★{% endif %}
+                {% if template.description %} - {{ template.description|truncatewords:5 }}{% endif %}
+              </option>
+            {% endfor %}
+          </select>
+          <span id="templateStatus" class="text-xs text-gray-500"></span>
+        </div>
+      </div>
     </div>
 
     <!-- Messages Container -->
@@ -67,6 +91,38 @@
 </div>
 
 <script>
+function changeTemplate(templateId) {
+  const statusSpan = document.getElementById('templateStatus');
+  statusSpan.textContent = 'Saving...';
+
+  const formData = new FormData();
+  formData.append('template_id', templateId);
+  formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+  fetch('{% url "chat_set_template" conversation.id %}', {
+    method: 'POST',
+    body: formData
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.status === 'success') {
+      statusSpan.textContent = '✓ Saved';
+      statusSpan.className = 'text-xs text-green-600';
+      setTimeout(() => {
+        statusSpan.textContent = '';
+      }, 2000);
+    } else {
+      statusSpan.textContent = '✗ Error';
+      statusSpan.className = 'text-xs text-red-600';
+    }
+  })
+  .catch(error => {
+    statusSpan.textContent = '✗ Error';
+    statusSpan.className = 'text-xs text-red-600';
+    console.error('Error:', error);
+  });
+}
+
 function sendMessage(event) {
   const form = document.getElementById('messageForm');
   const input = document.getElementById('messageInput');
@@ -86,186 +142,143 @@ function sendMessage(event) {
   const assistantDiv = appendMessage('assistant', '');
   const contentSpan = assistantDiv.querySelector('.message-content');
 
-  // Show typing indicator
-  Alpine.store('isTyping', true);
+  // Show thinking indicator
+  contentSpan.innerHTML = '<div class="text-gray-500 italic">🤔 Thinking...</div>';
 
-  // Connect to SSE endpoint
+  // Send message and get stream URL
   const formData = new FormData();
   formData.append('message', message);
   formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
 
-  fetch('{% url "chat_stream" conversation.id %}', {
+  fetch('{% url "chat_send" conversation.id %}', {
     method: 'POST',
     body: formData
-  }).then(response => {
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let fullText = '';
-
-    function processText({ done, value }) {
-      if (done) {
-        return;
-      }
-
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
-
-      lines.forEach(line => {
-        if (line.startsWith('data: ')) {
-          const data = JSON.parse(line.slice(6));
-
-          if (data.status === 'agent_starting') {
-            // Create wrapper for reasoning steps
-            contentSpan.innerHTML = '';
-            const reasoningWrapper = document.createElement('div');
-            reasoningWrapper.className = 'reasoning-wrapper space-y-1';
-            const startMsg = document.createElement('em');
-            startMsg.className = 'text-gray-500';
-            startMsg.textContent = '🤖 Starting agentic search...';
-            reasoningWrapper.appendChild(startMsg);
-            contentSpan.appendChild(reasoningWrapper);
-          }
-          else if (data.status === 'model_selected') {
-            // Display which model was selected
-            const modelName = data.model.replace('gene-chat-', '').replace('gene-', '');
-            const modelLabel = modelName === 'fast' ? '⚡ Fast Model'
-                             : modelName === 'main' ? '🧠 Main Model'
-                             : modelName === 'reasoner' ? '🔬 Reasoning Model'
-                             : data.model;
-            console.log(`Model selected: ${data.model}`);
-            let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
-            if (!reasoningWrapper) {
-              reasoningWrapper = document.createElement('div');
-              reasoningWrapper.className = 'reasoning-wrapper space-y-1';
-              contentSpan.appendChild(reasoningWrapper);
-            }
-            const modelDiv = document.createElement('div');
-            modelDiv.className = 'text-xs text-blue-600 mb-2';
-            modelDiv.textContent = modelLabel;
-            reasoningWrapper.appendChild(modelDiv);
-          }
-          else if (data.status === 'thinking_start') {
-            let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
-            if (!reasoningWrapper) {
-              reasoningWrapper = document.createElement('div');
-              reasoningWrapper.className = 'reasoning-wrapper';
-              contentSpan.appendChild(reasoningWrapper);
-            }
-            reasoningWrapper.innerHTML += `<div class="mb-2"><strong class="text-gray-700">🧠 Thinking (iteration ${data.iteration}/${data.max_iterations}):</strong></div><div class="thinking-content text-sm text-gray-600 italic bg-gray-50 p-2 rounded"></div>`;
-          }
-          else if (data.status === 'thinking_token') {
-            // Stream thinking tokens in real-time
-            const thinkingContent = contentSpan.querySelector('.thinking-content');
-            if (thinkingContent) {
-              thinkingContent.textContent += data.token;
-              messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            }
-          }
-          else if (data.status === 'thinking_end') {
-            // Thinking section complete
-            const thinkingContent = contentSpan.querySelector('.thinking-content');
-            if (thinkingContent) {
-              thinkingContent.classList.add('mb-3');
-            }
-          }
-          else if (data.status === 'tool_call') {
-            let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
-            if (!reasoningWrapper) {
-              reasoningWrapper = document.createElement('div');
-              reasoningWrapper.className = 'reasoning-wrapper space-y-1';
-              contentSpan.appendChild(reasoningWrapper);
-            }
-            const toolDiv = document.createElement('div');
-            toolDiv.className = 'text-xs text-gray-600 mt-1';
-            const argsStr = JSON.stringify(data.arguments);
-            toolDiv.innerHTML = `🔧 Calling ${data.tool}(${argsStr})<br><em>${data.reasoning}</em>`;
-            reasoningWrapper.appendChild(toolDiv);
-          }
-          else if (data.status === 'tool_result') {
-            let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
-            if (!reasoningWrapper) {
-              reasoningWrapper = document.createElement('div');
-              reasoningWrapper.className = 'reasoning-wrapper space-y-1';
-              contentSpan.appendChild(reasoningWrapper);
-            }
-            const resultDiv = document.createElement('div');
-            resultDiv.className = 'text-xs text-gray-500 mt-1';
-            const resultPreview = JSON.stringify(data.result).substring(0, 100);
-            resultDiv.textContent = `✅ Result: ${resultPreview}...`;
-            reasoningWrapper.appendChild(resultDiv);
-          }
-          else if (data.status === 'retrieving') {
-            let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
-            if (!reasoningWrapper) {
-              reasoningWrapper = document.createElement('div');
-              reasoningWrapper.className = 'reasoning-wrapper space-y-1';
-              contentSpan.appendChild(reasoningWrapper);
-            }
-            const retrievingMsg = document.createElement('em');
-            retrievingMsg.className = 'text-gray-500';
-            retrievingMsg.textContent = '🔍 Searching documents...';
-            reasoningWrapper.appendChild(retrievingMsg);
-          }
-          else if (data.status === 'retrieved') {
-            let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
-            if (!reasoningWrapper) {
-              reasoningWrapper = document.createElement('div');
-              reasoningWrapper.className = 'reasoning-wrapper space-y-1';
-              contentSpan.appendChild(reasoningWrapper);
-            }
-            const retrievedMsg = document.createElement('em');
-            retrievedMsg.className = 'text-gray-500';
-            retrievedMsg.textContent = `📚 Found ${data.chunks_count} relevant chunks. Generating answer...`;
-            reasoningWrapper.appendChild(retrievedMsg);
-          }
-          else if (data.status === 'generating') {
-            // Convert reasoning wrapper to collapsible details
-            let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
-            if (reasoningWrapper) {
-              const reasoningContent = reasoningWrapper.innerHTML;
-              const details = document.createElement('details');
-              details.className = 'mb-3 text-sm border-l-2 border-gray-300 pl-3';
-              details.innerHTML = `
-                <summary class="cursor-pointer text-gray-600 hover:text-gray-800 mb-2">
-                  🔍 View reasoning steps
-                </summary>
-                <div class="mt-2 space-y-1">
-                  ${reasoningContent}
-                </div>
-              `;
-              contentSpan.replaceChild(details, reasoningWrapper);
-            }
-            // Create answer div
-            const answerDiv = document.createElement('div');
-            answerDiv.className = 'answer-content';
-            contentSpan.appendChild(answerDiv);
-          }
-          else if (data.token) {
-            fullText += data.token;
-            // Append to answer div if it exists, otherwise to contentSpan
-            const answerDiv = contentSpan.querySelector('.answer-content');
-            if (answerDiv) {
-              answerDiv.textContent = fullText;
-            } else {
-              contentSpan.textContent = fullText;
-            }
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-          }
-          else if (data.done) {
-            if (data.error) {
-              contentSpan.innerHTML = `<span class="text-red-600">Error: ${data.error}</span>`;
-            }
-            // Reload page to show persisted messages
-            window.location.reload();
-          }
-        }
-      });
-
-      return reader.read().then(processText);
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.status === 'started') {
+      // Connect to SSE stream for this message
+      connectToStream(data.assistant_message_id, contentSpan);
+    } else {
+      contentSpan.innerHTML = '<span class="text-red-600">Error starting task</span>';
     }
-
-    return reader.read().then(processText);
+  })
+  .catch(error => {
+    console.error('Error sending message:', error);
+    contentSpan.innerHTML = '<span class="text-red-600">Error: ' + error + '</span>';
   });
+}
+
+function connectToStream(messageId, contentSpan) {
+  const messagesDiv = document.getElementById('messages');
+  let fullText = '';
+
+  const eventSource = new EventSource('/chat/stream/' + messageId + '/');
+
+  eventSource.addEventListener('message', function(e) {
+    const data = JSON.parse(e.data);
+
+    if (data.type === 'connected') {
+      contentSpan.innerHTML = '<div class="text-gray-500 italic">🔌 Connected...</div>';
+    }
+    else if (data.type === 'status' || data.status === 'started') {
+      contentSpan.innerHTML = '<div class="text-gray-500 italic">🚀 Starting agent...</div>';
+    }
+    else if (data.type === 'model_selected' || data.status === 'model_selected') {
+      const modelName = data.model.replace('gene-chat-', '').replace('gene-', '');
+      const modelLabel = modelName === 'fast' ? '⚡ Fast Model'
+                       : modelName === 'main' ? '🧠 Main Model'
+                       : modelName === 'reasoner' ? '🔬 Reasoning Model'
+                       : data.model;
+      contentSpan.innerHTML = '<div class="text-xs text-blue-600">' + modelLabel + '</div>';
+    }
+    else if (data.type === 'thinking_start' || data.status === 'thinking_start') {
+      let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
+      if (!reasoningWrapper) {
+        reasoningWrapper = document.createElement('div');
+        reasoningWrapper.className = 'reasoning-wrapper space-y-1';
+        contentSpan.appendChild(reasoningWrapper);
+      }
+      const thinkingDiv = document.createElement('div');
+      thinkingDiv.innerHTML = '<div class="mb-2"><strong class="text-gray-700">🧠 Thinking (iteration ' + data.iteration + '/' + data.max_iterations + '):</strong></div><div class="thinking-content text-sm text-gray-600 italic bg-gray-50 p-2 rounded"></div>';
+      reasoningWrapper.appendChild(thinkingDiv);
+    }
+    else if (data.type === 'thinking_token' || data.status === 'thinking_token') {
+      const thinkingContent = contentSpan.querySelector('.thinking-content:last-child');
+      if (thinkingContent) {
+        thinkingContent.textContent += data.token;
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      }
+    }
+    else if (data.type === 'tool_call' || data.status === 'tool_call') {
+      let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
+      if (!reasoningWrapper) {
+        reasoningWrapper = document.createElement('div');
+        reasoningWrapper.className = 'reasoning-wrapper space-y-1';
+        contentSpan.appendChild(reasoningWrapper);
+      }
+      const toolDiv = document.createElement('div');
+      toolDiv.className = 'text-xs text-gray-600 mt-1';
+      const argsStr = JSON.stringify(data.arguments);
+      toolDiv.innerHTML = '🔧 Calling ' + data.tool + '(' + argsStr + ')<br><em>' + data.reasoning + '</em>';
+      reasoningWrapper.appendChild(toolDiv);
+    }
+    else if (data.type === 'tool_result' || data.status === 'tool_result') {
+      let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
+      if (!reasoningWrapper) {
+        reasoningWrapper = document.createElement('div');
+        reasoningWrapper.className = 'reasoning-wrapper space-y-1';
+        contentSpan.appendChild(reasoningWrapper);
+      }
+      const resultDiv = document.createElement('div');
+      resultDiv.className = 'text-xs text-gray-500 mt-1';
+      const resultPreview = JSON.stringify(data.result).substring(0, 100);
+      resultDiv.textContent = '✅ Result: ' + resultPreview + '...';
+      reasoningWrapper.appendChild(resultDiv);
+    }
+    else if (data.type === 'generating' || data.status === 'generating') {
+      // Convert reasoning wrapper to collapsible details
+      let reasoningWrapper = contentSpan.querySelector('.reasoning-wrapper');
+      if (reasoningWrapper) {
+        const reasoningContent = reasoningWrapper.innerHTML;
+        const details = document.createElement('details');
+        details.className = 'mb-3 text-sm border-l-2 border-gray-300 pl-3';
+        details.innerHTML = '<summary class="cursor-pointer text-gray-600 hover:text-gray-800 mb-2">🔍 View reasoning steps</summary><div class="mt-2 space-y-1">' + reasoningContent + '</div>';
+        contentSpan.replaceChild(details, reasoningWrapper);
+      }
+      // Create answer div
+      const answerDiv = document.createElement('div');
+      answerDiv.className = 'answer-content';
+      contentSpan.appendChild(answerDiv);
+    }
+    else if (data.token) {
+      fullText += data.token;
+      const answerDiv = contentSpan.querySelector('.answer-content');
+      if (answerDiv) {
+        answerDiv.textContent = fullText;
+      } else {
+        contentSpan.textContent = fullText;
+      }
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+    else if (data.type === 'complete') {
+      eventSource.close();
+      // Reload page to show persisted messages
+      window.location.reload();
+    }
+    else if (data.type === 'error') {
+      eventSource.close();
+      contentSpan.innerHTML = '<span class="text-red-600">Error: ' + data.error + '</span>';
+    }
+  });
+
+  eventSource.onerror = function(err) {
+    console.error('EventSource error:', err);
+    eventSource.close();
+    if (!contentSpan.querySelector('.answer-content') && !fullText) {
+      contentSpan.innerHTML = '<span class="text-red-600">Connection error</span>';
+    }
+  };
 }
 
 function appendMessage(role, content) {
@@ -277,11 +290,11 @@ function appendMessage(role, content) {
   }
 
   const bubbleDiv = document.createElement('div');
-  bubbleDiv.className = `max-w-3xl rounded-lg p-4 shadow-sm ${
+  bubbleDiv.className = 'max-w-3xl rounded-lg p-4 shadow-sm ' + (
     role === 'user'
       ? 'bg-blue-600 text-white'
       : 'bg-white border border-gray-200'
-  }`;
+  );
 
   const contentSpan = document.createElement('div');
   contentSpan.className = 'message-content';

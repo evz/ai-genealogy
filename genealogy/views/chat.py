@@ -2,7 +2,9 @@
 
 import json
 import logging
+import time
 
+from django.core.cache import cache
 from django.http import JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
@@ -12,6 +14,7 @@ from ..ollama_utils import get_default_models
 from ..services.agent_executor import AgentExecutor
 from ..services import ModelRouter
 from ..tasks import generate_conversation_title
+from ..tasks.chat_agent import process_chat_message
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +36,8 @@ def chat_index(request):
 
 def conversation_detail(request, conversation_id):
     """View a specific conversation"""
+    from ..models import PromptTemplate
+
     conversation = get_object_or_404(Conversation, id=conversation_id)
 
     # Verify session ownership
@@ -41,9 +46,26 @@ def conversation_detail(request, conversation_id):
 
     messages = conversation.messages.all()
 
+    # Get available prompt templates for the selector
+    available_templates = PromptTemplate.objects.filter(
+        name='agent',
+        is_archived=False
+    ).order_by('version')
+
+    # Determine which template is currently in use
+    if conversation.prompt_template_override:
+        current_template = conversation.prompt_template_override
+    else:
+        current_template = PromptTemplate.objects.filter(
+            name='agent',
+            is_active=True
+        ).first()
+
     return render(request, 'genealogy/chat/conversation.html', {
         'conversation': conversation,
-        'messages': messages
+        'messages': messages,
+        'available_templates': available_templates,
+        'current_template': current_template,
     })
 
 
@@ -62,8 +84,100 @@ def new_conversation(request):
 
 
 @require_http_methods(["POST"])
-def stream_message(request, conversation_id):
-    """Stream LLM response using Server-Sent Events (SSE)"""
+def set_prompt_template(request, conversation_id):
+    """Set the prompt template override for this conversation"""
+    from ..models import PromptTemplate
+
+    conversation = get_object_or_404(Conversation, id=conversation_id)
+
+    # Verify session ownership
+    if conversation.session_key != request.session.session_key:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    template_id = request.POST.get('template_id')
+
+    if template_id == 'default':
+        # Clear override, use global active template
+        conversation.prompt_template_override = None
+        conversation.save()
+        return JsonResponse({
+            'status': 'success',
+            'message': 'Using global active template'
+        })
+
+    try:
+        template = PromptTemplate.objects.get(id=template_id)
+        conversation.prompt_template_override = template
+        conversation.save()
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Now using template v{template.version}'
+        })
+    except PromptTemplate.DoesNotExist:
+        return JsonResponse({'error': 'Template not found'}, status=404)
+
+
+@require_http_methods(["GET"])
+def stream_events(request, message_id):
+    """
+    SSE endpoint that streams events for a specific message.
+
+    The browser connects to this endpoint and receives real-time updates
+    as the Celery task processes the message.
+    """
+    def event_stream():
+        """Generate SSE stream from Redis events"""
+        cache_key = f"chat_events:{message_id}"
+        last_index = 0
+        timeout_counter = 0
+        max_timeout = 120  # 2 minutes of no events before giving up
+
+        # Send initial connection event
+        yield f"data: {json.dumps({'type': 'connected'})}\n\n"
+
+        while timeout_counter < max_timeout:
+            # Get events from Redis
+            events = cache.get(cache_key, [])
+
+            # Send any new events
+            if len(events) > last_index:
+                for event in events[last_index:]:
+                    yield f"data: {json.dumps(event)}\n\n"
+
+                    # Check if this is a terminal event
+                    if event.get('type') in ['complete', 'error']:
+                        # Clean up events after sending completion
+                        cache.delete(cache_key)
+                        return
+
+                last_index = len(events)
+                timeout_counter = 0  # Reset timeout on activity
+            else:
+                # No new events, send keepalive
+                yield f": keepalive\n\n"
+                timeout_counter += 1
+                time.sleep(1)
+
+        # Timeout - send error and close
+        yield f"data: {json.dumps({'type': 'error', 'error': 'Stream timeout'})}\n\n"
+
+    response = StreamingHttpResponse(
+        event_stream(),
+        content_type='text/event-stream'
+    )
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'  # Disable nginx buffering
+    return response
+
+
+@require_http_methods(["POST"])
+def send_message(request, conversation_id):
+    """
+    Receive a chat message and start async processing.
+
+    Creates message records and starts a Celery task to process the message.
+    Browser should connect to /stream/<message_id>/ to receive updates.
+    """
     conversation = get_object_or_404(Conversation, id=conversation_id)
 
     # Verify session ownership
@@ -75,9 +189,6 @@ def stream_message(request, conversation_id):
     if not user_message:
         return JsonResponse({'error': 'Empty message'}, status=400)
 
-    # Initialize model router
-    router = ModelRouter()
-
     # Save user message
     user_msg = Message.objects.create(
         conversation=conversation,
@@ -85,157 +196,30 @@ def stream_message(request, conversation_id):
         content=user_message
     )
 
-    def event_stream():
-        """Generate SSE stream"""
-        try:
-            # Get conversation history (shared by both modes)
-            history = conversation.messages.filter(
-                created_at__lt=user_msg.created_at
-            ).order_by('-created_at')[:50]  # Last 50 messages (25 exchanges)
-
-            # Build conversation history text
-            history_text = ""
-            for msg in reversed(list(history)):
-                role_label = "USER" if msg.role == "user" else "ASSISTANT"
-                history_text += f"{role_label}: {msg.content}\n\n"
-
-            # Agentic mode - use AgentExecutor with tools
-            yield f"data: {json.dumps({'status': 'agent_starting'})}\n\n"
-
-            # Route model for agent mode (no chunks yet)
-            selected_model = router.route(
-                query=user_message,
-                chunks=None,
-                use_agent=True
-            )
-
-            # Emit model selection event
-            yield f"data: {json.dumps({
-                'status': 'model_selected',
-                'model': selected_model
-            })}\n\n"
-
-            # Agent mode: Only provide conversation history, no RAG retrieval
-            # This forces the agent to use tools, giving us control over disambiguation
-            initial_context = f"""CONVERSATION HISTORY:
-{history_text if history_text else "No previous messages"}"""
-
-            # Initialize agent
-            agent = AgentExecutor(model=selected_model, max_iterations=20, timeout=300)
-
-            # We'll still need chunks for saving metadata, so retrieve them after the agent finishes
-            chunks = []
-
-            # Stream agent execution
-            full_response = ""
-            tool_calls_made = []
-
-            for event in agent.execute_streaming(
-                user_query=user_message,
-                initial_context=initial_context
-            ):
-                event_type = event.get("type")
-
-                if event_type == "thinking_start":
-                    yield f"data: {json.dumps({
-                        'status': 'thinking_start',
-                        'iteration': event['iteration'],
-                        'max_iterations': event['max_iterations']
-                    })}\n\n"
-
-                elif event_type == "thinking_token":
-                    yield f"data: {json.dumps({
-                        'status': 'thinking_token',
-                        'token': event['token'],
-                        'iteration': event['iteration']
-                    })}\n\n"
-
-                elif event_type == "thinking_end":
-                    yield f"data: {json.dumps({
-                        'status': 'thinking_end',
-                        'iteration': event['iteration']
-                    })}\n\n"
-
-                elif event_type == "tool_call":
-                    yield f"data: {json.dumps({
-                        'status': 'tool_call',
-                        'tool': event['tool'],
-                        'arguments': event['arguments'],
-                        'reasoning': event.get('reasoning', '')
-                    })}\n\n"
-
-                elif event_type == "tool_result":
-                    yield f"data: {json.dumps({
-                        'status': 'tool_result',
-                        'tool': event['tool'],
-                        'result': event['result']
-                    })}\n\n"
-
-                elif event_type == "answer":
-                    full_response = event['answer']
-                    tool_calls_made = event.get('tool_calls', [])
-
-                    # Stream the final answer
-                    yield f"data: {json.dumps({
-                        'status': 'generating'
-                    })}\n\n"
-
-                    # Stream answer word by word for better UX
-                    words = full_response.split()
-                    for word in words:
-                        yield f"data: {json.dumps({
-                            'token': word + ' ',
-                            'done': False
-                        })}\n\n"
-
-                elif event_type == "error":
-                    # Handle error
-                    error_msg = event.get('error', 'Unknown error')
-                    full_response = event.get('answer', f"Error: {error_msg}")
-                    tool_calls_made = event.get('tool_calls', [])
-
-                    yield f"data: {json.dumps({
-                        'error': error_msg,
-                        'partial_answer': full_response
-                    })}\n\n"
-
-            # Save assistant message with tool call metadata
-            Message.objects.create(
-                conversation=conversation,
-                role='assistant',
-                content=full_response,
-                retrieved_chunks=[{
-                    'id': str(c['id']),
-                    'text': c['text_content'][:200],
-                    'page': c['start_page'],
-                    'score': float(c.get('rrf_score', 0.0))
-                } for c in chunks],
-                retrieval_metadata={
-                    'chunks_count': len(chunks),
-                    'model_used': selected_model,
-                    'agent_mode': True,
-                    'tool_calls': tool_calls_made
-                }
-            )
-
-            # Send completion
-            yield f"data: {json.dumps({
-                'done': True,
-                'full_text': full_response
-            })}\n\n"
-
-            # Enqueue background task to generate conversation title if this is the first message
-            if conversation.title == "New Conversation":
-                generate_conversation_title.delay(str(conversation.id), user_message)
-
-        except Exception as e:
-            logger.exception(f"Error streaming message: {e}")
-            yield f"data: {json.dumps({
-                'error': str(e),
-                'done': True
-            })}\n\n"
-
-    return StreamingHttpResponse(
-        event_stream(),
-        content_type='text/event-stream'
+    # Create assistant message placeholder
+    assistant_msg = Message.objects.create(
+        conversation=conversation,
+        role='assistant',
+        content='',  # Will be updated by Celery task
+        retrieval_metadata={'agent_mode': True}
     )
+
+    # Start Celery task to process the message
+    process_chat_message.delay(
+        conversation_id=str(conversation.id),
+        user_message_id=str(user_msg.id),
+        assistant_message_id=str(assistant_msg.id),
+        user_message_text=user_message
+    )
+
+    # Enqueue background task to generate conversation title if this is the first message
+    if conversation.title == "New Conversation":
+        generate_conversation_title.delay(str(conversation.id), user_message)
+
+    # Return message IDs so browser can connect to SSE stream
+    return JsonResponse({
+        'status': 'started',
+        'user_message_id': str(user_msg.id),
+        'assistant_message_id': str(assistant_msg.id),
+        'stream_url': f'/chat/stream/{assistant_msg.id}/'
+    })
