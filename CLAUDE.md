@@ -1,0 +1,1 @@
+- you need docker compose exec web
