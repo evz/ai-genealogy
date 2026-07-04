@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 
 from genealogy.ollama_utils import OllamaClient
 from genealogy.services.genealogy_tools import GenealogyTools
+from genealogy.services.prompt_registry import PromptRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -77,20 +78,35 @@ class AgentExecutor:
         }
     ]
 
-    def __init__(self, model: str = "gene-chat-main", max_iterations: int = 20, timeout: int = 300):
+    def __init__(
+        self,
+        model: str = "qwen2.5:14b-instruct-q5_K_M",
+        max_iterations: int = 20,
+        timeout: int = 300,
+        prompt_template_name: str = "agent",
+        prompt_template_version: str = None,
+        message_instance=None  # Message model instance for logging
+    ):
         """
         Initialize agent executor.
 
         Args:
-            model: LLM model to use
+            model: Base LLM model to use (e.g., "qwen2.5:14b-instruct-q5_K_M", "llama3.1:8b")
             max_iterations: Maximum tool calls before stopping
             timeout: Total timeout in seconds
+            prompt_template_name: Name of prompt template (e.g., "agent")
+            prompt_template_version: Specific version to use (e.g., "2"), None = use active
+            message_instance: Message model instance to link prompt logs to
         """
         self.model = model
         self.max_iterations = max_iterations
         self.timeout = timeout
+        self.prompt_template_name = prompt_template_name
+        self.prompt_template_version = prompt_template_version
+        self.message_instance = message_instance
         self.ollama = OllamaClient(timeout=timeout)
         self.tools = GenealogyTools()
+        self.prompt_registry = PromptRegistry()
 
     def _check_duplicate_call(self, tool_name: str, tool_args: Dict, tool_calls_made: List[Dict]) -> Optional[Dict]:
         """
@@ -181,8 +197,9 @@ class AgentExecutor:
                 "max_iterations": self.max_iterations
             }
 
-            # Build prompt
-            prompt = self._build_agent_prompt(
+            # Build prompt using template system
+            prompt_start_time = time.time()
+            prompt_data = self._build_agent_prompt(
                 user_query=user_query,
                 context="\n\n".join(context_parts),
                 tool_calls_made=tool_calls_made
@@ -193,10 +210,12 @@ class AgentExecutor:
                 response = ""
                 in_think_tag = False
                 think_content = ""
+                llm_start_time = time.time()
 
                 for chunk in self.ollama.generate_stream(
                     model=self.model,
-                    prompt=prompt,
+                    prompt=prompt_data["user"],
+                    system=prompt_data["system"],
                     num_ctx=32768,
                     temperature=0.1
                 ):
@@ -226,8 +245,10 @@ class AgentExecutor:
                         in_think_tag = False
                         yield {
                             "type": "thinking_end",
-                            "iteration": iteration
+                            "iteration": iteration,
+                            "content": think_content  # Include full thinking content
                         }
+                        think_content = ""  # Reset for next iteration
 
                 if not response:
                     yield {
@@ -248,8 +269,28 @@ class AgentExecutor:
                 }
                 return
 
+            # Calculate latency
+            latency_ms = int((time.time() - llm_start_time) * 1000)
+
             # Parse response to check if it's a tool call or final answer
             action = self._parse_response(response)
+
+            # Log this prompt execution if we have a message instance
+            if self.message_instance:
+                parsed_successfully = action["type"] != "error"
+                parse_error = action.get("error", "") if not parsed_successfully else ""
+
+                self.prompt_registry.log_prompt(
+                    message=self.message_instance,
+                    prompt_data=prompt_data,
+                    model_name=self.model,
+                    iteration=iteration,
+                    tool_calls=tool_calls_made,
+                    llm_response=response,
+                    parsed_successfully=parsed_successfully,
+                    parse_error=parse_error,
+                    latency_ms=latency_ms
+                )
 
             if action["type"] == "tool_call":
                 # Notify about tool call
@@ -364,8 +405,8 @@ class AgentExecutor:
             iteration += 1
             logger.info(f"Agent iteration {iteration}/{self.max_iterations}")
 
-            # Build prompt
-            prompt = self._build_agent_prompt(
+            # Build prompt using template system
+            prompt_data = self._build_agent_prompt(
                 user_query=user_query,
                 context="\n\n".join(context_parts),
                 tool_calls_made=tool_calls_made
@@ -373,11 +414,15 @@ class AgentExecutor:
 
             # Get LLM response
             try:
+                llm_start_time = time.time()
                 response = self.ollama.generate(
                     model=self.model,
-                    prompt=prompt,
-                    options={'num_ctx': 32768, 'temperature': 0.1}
+                    prompt=prompt_data["user"],
+                    system=prompt_data["system"],
+                    num_ctx=32768,
+                    temperature=0.1
                 )
+                latency_ms = int((time.time() - llm_start_time) * 1000)
 
                 if not response:
                     return {
@@ -400,6 +445,23 @@ class AgentExecutor:
 
             # Parse response to check if it's a tool call or final answer
             action = self._parse_response(response)
+
+            # Log this prompt execution if we have a message instance
+            if self.message_instance:
+                parsed_successfully = action["type"] != "error"
+                parse_error = action.get("error", "") if not parsed_successfully else ""
+
+                self.prompt_registry.log_prompt(
+                    message=self.message_instance,
+                    prompt_data=prompt_data,
+                    model_name=self.model,
+                    iteration=iteration,
+                    tool_calls=tool_calls_made,
+                    llm_response=response,
+                    parsed_successfully=parsed_successfully,
+                    parse_error=parse_error,
+                    latency_ms=latency_ms
+                )
 
             if action["type"] == "error":
                 # Parsing error - add error message to context so LLM can correct itself
@@ -474,36 +536,47 @@ class AgentExecutor:
         user_query: str,
         context: str,
         tool_calls_made: List[Dict]
-    ) -> str:
+    ) -> Dict[str, str]:
         """
-        Build prompt for agentic workflow.
+        Build prompt for agentic workflow using database templates.
 
-        Provides current query, available tools, call history, and accumulated context.
-        Core instructions are in the model's SYSTEM prompt.
+        Returns:
+            Dict with keys: "system", "user", "template_name", "template_version", "variables"
         """
+
+        # Get template from database
+        if self.prompt_template_version:
+            # Use specific version
+            template = self.prompt_registry.get_template_by_version(
+                self.prompt_template_name,
+                self.prompt_template_version
+            )
+        else:
+            # Use active version
+            template = self.prompt_registry.get_active_template(
+                self.prompt_template_name
+            )
 
         tools_description = "\n".join([
             f"- {tool['name']}: {tool['description']}\n  Parameters: {tool['parameters']}"
             for tool in self.AVAILABLE_TOOLS
         ])
 
-        previous_tools = "\n".join([
+        previous_calls = "\n".join([
             f"Iteration {call['iteration']}: {call['tool']}({call['arguments']})"
             for call in tool_calls_made
         ]) if tool_calls_made else "None"
 
-        return f"""USER QUERY: {user_query}
-
-TOOLS:
-{tools_description}
-
-PREVIOUS CALLS ({len(tool_calls_made)}/{self.max_iterations}):
-{previous_tools}
-
-CONTEXT:
-{context if context else "No context yet."}
-
-Respond with TOOL_CALL or ANSWER:"""
+        # Render prompt using template
+        return self.prompt_registry.render_prompt(
+            template=template,
+            user_query=user_query,
+            tools_description=tools_description,
+            num_calls=len(tool_calls_made),
+            max_iterations=self.max_iterations,
+            previous_calls=previous_calls,
+            context=context if context else "No context yet."
+        )
 
     def _parse_response(self, response: str) -> Dict:
         """
@@ -515,6 +588,12 @@ Respond with TOOL_CALL or ANSWER:"""
             {"type": "answer", "answer": str}
         """
         response = response.strip()
+
+        # Strip <think>...</think> tags from reasoning models (e.g., deepseek-r1)
+        # These contain chain-of-thought reasoning that shouldn't be in the final answer
+        # Note: The original response with think tags is still saved in PromptLog for debugging
+        import re
+        response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
 
         # Check if TOOL_CALL appears anywhere in the response (not just at start)
         # LLMs sometimes add thinking/reasoning text before the tool call
@@ -534,6 +613,28 @@ Respond with TOOL_CALL or ANSWER:"""
             for line in lines:
                 if line.startswith("TOOL_CALL:"):
                     tool_name = line.replace("TOOL_CALL:", "").strip()
+                    # Handle models that use function call syntax in tool name
+                    # e.g., "get_person_details(person_id='VIII.3.d', toolbench_rapidapi_key='...')"
+                    if '(' in tool_name and tool_name.endswith(')'):
+                        # Parse arguments from function call syntax
+                        func_call = tool_name
+                        tool_name = func_call.split('(')[0].strip()
+
+                        # Extract arguments from the function call
+                        args_start = func_call.index('(') + 1
+                        args_end = func_call.rindex(')')
+                        args_str = func_call[args_start:args_end]
+
+                        # Parse key=value pairs from function syntax
+                        # This is a simple parser - handles key="value" or key='value'
+                        import re
+                        arg_pattern = r'(\w+)\s*=\s*["\']([^"\']*)["\']'
+                        parsed_args = dict(re.findall(arg_pattern, args_str))
+
+                        # Only use these if ARGUMENTS line doesn't override later
+                        # Store as fallback
+                        arguments = parsed_args
+                        logger.warning(f"Tool call used function syntax, parsed: {tool_name}({parsed_args})")
                 elif line.startswith("ARGUMENTS:"):
                     args_str = line.replace("ARGUMENTS:", "").strip()
                     try:
@@ -608,7 +709,21 @@ Respond with TOOL_CALL or ANSWER:"""
             if not method:
                 return {"error": f"Unknown tool: {tool_name}"}
 
-            result = method(**arguments)
+            # Filter arguments to only include expected parameters
+            # This prevents issues with models that add extra args like "toolbench_rapidapi_key"
+            import inspect
+            sig = inspect.signature(method)
+            valid_params = set(sig.parameters.keys())
+
+            # Filter out unexpected arguments
+            filtered_args = {k: v for k, v in arguments.items() if k in valid_params}
+
+            # Log if we filtered anything out
+            if len(filtered_args) != len(arguments):
+                filtered_out = set(arguments.keys()) - valid_params
+                logger.warning(f"Filtered unexpected arguments from {tool_name}: {filtered_out}")
+
+            result = method(**filtered_args)
             return result
 
         except TypeError as e:

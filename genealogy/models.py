@@ -662,6 +662,16 @@ class Conversation(models.Model):
         help_text="Limit search to these documents (empty = search all)"
     )
 
+    # Prompt template override (for testing specific versions)
+    prompt_template_override = models.ForeignKey(
+        'PromptTemplate',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='conversations_using',
+        help_text="Override active template for this conversation (for A/B testing)"
+    )
+
     class Meta:
         ordering = ['-updated_at']
 
@@ -693,3 +703,264 @@ class Message(models.Model):
 
     def __str__(self):
         return f"{self.role}: {self.content[:50]}"
+
+
+class PromptTemplate(models.Model):
+    """
+    Versioned prompt templates stored in database.
+
+    Allows no-code template switching and A/B testing.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Identity
+    name = models.CharField(
+        max_length=100,
+        db_index=True,
+        help_text="Template name (e.g., 'agent', 'extraction')"
+    )
+    version = models.CharField(
+        max_length=20,
+        help_text="Version number (e.g., '1', '2', '3')"
+    )
+
+    # Template content
+    system_template = models.TextField(
+        help_text="System prompt template with {variables}"
+    )
+    user_template = models.TextField(
+        help_text="User prompt template with {variables}"
+    )
+
+    # Metadata
+    description = models.TextField(
+        blank=True,
+        help_text="What changed in this version"
+    )
+    created_by = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Who created this template"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # Status
+    is_active = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Is this the active version? (Only one active per name)"
+    )
+    is_archived = models.BooleanField(
+        default=False,
+        help_text="Archive old experimental versions"
+    )
+
+    # Documentation
+    required_variables = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of required variable names (e.g., ['user_query', 'tools_description'])"
+    )
+    example_variables = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Example values for testing template rendering"
+    )
+
+    class Meta:
+        unique_together = ['name', 'version']
+        ordering = ['name', '-version']
+        indexes = [
+            models.Index(fields=['name', 'is_active']),
+        ]
+
+    def __str__(self):
+        active = " (ACTIVE)" if self.is_active else ""
+        archived = " [ARCHIVED]" if self.is_archived else ""
+        return f"{self.name} v{self.version}{active}{archived}"
+
+    def clean(self):
+        """Validate that only one template per name is active."""
+        if self.is_active:
+            # Check for other active templates with same name
+            existing_active = PromptTemplate.objects.filter(
+                name=self.name,
+                is_active=True
+            ).exclude(id=self.id)
+
+            if existing_active.exists():
+                raise ValidationError(
+                    f"Template '{existing_active.first()}' is already active. "
+                    f"Deactivate it first before activating this version."
+                )
+
+    def save(self, *args, **kwargs):
+        """Override save to enforce single active template per name."""
+        if self.is_active:
+            # Deactivate all other templates with same name
+            PromptTemplate.objects.filter(
+                name=self.name,
+                is_active=True
+            ).exclude(id=self.id).update(is_active=False)
+
+        super().save(*args, **kwargs)
+
+    def clone_as_new_version(self, new_version: str, created_by: str = "") -> 'PromptTemplate':
+        """Create a copy of this template with a new version number."""
+        return PromptTemplate.objects.create(
+            name=self.name,
+            version=new_version,
+            system_template=self.system_template,
+            user_template=self.user_template,
+            description=f"Cloned from v{self.version}",
+            created_by=created_by,
+            is_active=False,
+            required_variables=self.required_variables.copy(),
+            example_variables=self.example_variables.copy()
+        )
+
+    def render(self, **variables) -> dict:
+        """
+        Render the template with given variables.
+
+        Returns:
+            {
+                "system": rendered system prompt,
+                "user": rendered user prompt,
+                "template_name": self.name,
+                "template_version": self.version,
+                "variables": variables
+            }
+        """
+        try:
+            system = self.system_template.format(**variables) if self.system_template else ""
+            user = self.user_template.format(**variables)
+
+            return {
+                "system": system,
+                "user": user,
+                "template_name": self.name,
+                "template_version": self.version,
+                "variables": variables
+            }
+        except KeyError as e:
+            raise ValueError(
+                f"Missing required variable in template {self.name} v{self.version}: {e}"
+            )
+
+
+class PromptLog(models.Model):
+    """
+    Audit log for every prompt sent to an LLM during chat interactions.
+
+    Enables prompt debugging, A/B testing, and effectiveness analysis.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    message = models.ForeignKey(
+        Message,
+        on_delete=models.CASCADE,
+        related_name='prompt_logs',
+        help_text="The message this prompt was used to generate"
+    )
+
+    # Prompt metadata
+    prompt_template_name = models.CharField(
+        max_length=100,
+        help_text="Name of the prompt template used (e.g., 'agent_main_v1')"
+    )
+    prompt_version = models.CharField(
+        max_length=20,
+        help_text="Version of the prompt template (e.g., '1.2.0')"
+    )
+
+    # Full prompt content
+    system_prompt = models.TextField(
+        blank=True,
+        help_text="System prompt sent to the LLM"
+    )
+    user_prompt = models.TextField(
+        help_text="User prompt sent to the LLM"
+    )
+    full_prompt = models.TextField(
+        help_text="Complete assembled prompt (system + user combined for logging)"
+    )
+
+    # Template variables used
+    prompt_variables = models.JSONField(
+        default=dict,
+        help_text="Variables used to render the template"
+    )
+
+    # Model and execution metadata
+    model_name = models.CharField(
+        max_length=100,
+        help_text="LLM model used (e.g., 'llama3.1:8b', 'qwen2.5:14b')"
+    )
+    iteration = models.PositiveIntegerField(
+        default=1,
+        help_text="Iteration number in agent loop (1 = first call)"
+    )
+
+    # Tool call tracking
+    tool_calls = models.JSONField(
+        default=list,
+        help_text="List of tool calls made up to this iteration"
+    )
+
+    # Response and outcome
+    llm_response = models.TextField(
+        blank=True,
+        help_text="Raw response from the LLM"
+    )
+    parsed_successfully = models.BooleanField(
+        default=True,
+        help_text="Whether the response was parsed successfully"
+    )
+    parse_error = models.TextField(
+        blank=True,
+        help_text="Error message if parsing failed"
+    )
+
+    # Performance metrics
+    latency_ms = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Response time in milliseconds"
+    )
+    token_count_prompt = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Approximate token count of prompt"
+    )
+    token_count_response = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Approximate token count of response"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['message', 'iteration']),
+            models.Index(fields=['prompt_template_name', 'prompt_version']),
+            models.Index(fields=['model_name']),
+            models.Index(fields=['created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.prompt_template_name} v{self.prompt_version} ({self.model_name}) - iter {self.iteration}"
+
+    @property
+    def prompt_length(self):
+        """Total character count of full prompt"""
+        return len(self.full_prompt)
+
+    @property
+    def response_length(self):
+        """Total character count of LLM response"""
+        return len(self.llm_response)
