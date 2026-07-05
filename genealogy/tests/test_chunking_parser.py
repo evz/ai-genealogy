@@ -64,6 +64,62 @@ class TestParseGroundingTokens:
         # Second should be first family group
         assert 'XII.1.' in tokens[1].content
 
+    def test_parse_basic_token_ollama_format(self):
+        """Parse a basic grounding token in Ollama deepseek-ocr's format (no <|ref|>/<|det|> tags)"""
+        ocr_text = 'text[[10, 20, 100, 40]]\nHello World'
+        tokens = parse_grounding_tokens(ocr_text)
+
+        assert len(tokens) == 1
+        assert tokens[0].content == 'Hello World'
+        assert tokens[0].element_type == 'text'
+        assert tokens[0].bbox.x1 == 10
+        assert tokens[0].bbox.y1 == 20
+        assert tokens[0].bbox.x2 == 100
+        assert tokens[0].bbox.y2 == 40
+        assert tokens[0].is_inverted is False
+
+    def test_parse_inverted_token_ollama_format(self):
+        """Parse an Ollama-format token with our own injected inverted flag"""
+        ocr_text = 'sub_title[[10, 20, 100, 40]]<|inverted|>true<|/inverted|>\nInfo Box Header'
+        tokens = parse_grounding_tokens(ocr_text)
+
+        assert len(tokens) == 1
+        assert tokens[0].content == 'Info Box Header'
+        assert tokens[0].is_inverted is True
+
+    def test_parse_multiple_tokens_ollama_format(self):
+        """Parse sequence of multiple Ollama-format tokens"""
+        ocr_text = (
+            'sub_title[[10, 10, 100, 30]]\n'
+            'Header\n'
+            'text[[10, 35, 500, 55]]\n'
+            'Body text'
+        )
+        tokens = parse_grounding_tokens(ocr_text)
+
+        assert len(tokens) == 2
+        assert tokens[0].element_type == 'sub_title'
+        assert tokens[0].content == 'Header'
+        assert tokens[1].element_type == 'text'
+        assert tokens[1].content == 'Body text'
+
+    def test_parse_mixed_old_and_new_format_tokens(self):
+        """A document's combined OCR text can mix pages OCR'd by the old ZeroMQ
+        server and pages OCR'd via Ollama; both formats must parse together."""
+        ocr_text = (
+            '<|ref|>sub_title<|/ref|><|det|>[[10, 10, 100, 30]]<|/det|>\n'
+            'Old Format Header\n'
+            'text[[10, 35, 500, 55]]\n'
+            'New Format Body'
+        )
+        tokens = parse_grounding_tokens(ocr_text)
+
+        assert len(tokens) == 2
+        assert tokens[0].element_type == 'sub_title'
+        assert tokens[0].content == 'Old Format Header'
+        assert tokens[1].element_type == 'text'
+        assert tokens[1].content == 'New Format Body'
+
 
 @pytest.mark.unit
 class TestChunkTypeDetection:

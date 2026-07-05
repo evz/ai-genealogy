@@ -9,6 +9,7 @@ Tasks are organized by functionality:
 - build_genealogy_graph: Build Person/Relationship/Partnership from genealogical IDs
 - conversation: Conversation-related tasks (title generation, etc.)
 - chat_agent: Chat agent processing with SSE streaming
+- source_image: Transcription + translation of archival SourceImage uploads
 """
 
 # Import all tasks for backward compatibility
@@ -19,12 +20,16 @@ from .conversation import generate_conversation_title
 from .extraction import extract_entities_from_chunks
 from .ocr import process_document_ocr, process_page_ocr
 from .persist_entities import persist_extracted_entities
+from .source_image import transcribe_source_image, translate_source_image
 from .summarization import summarize_chunk, summarize_all_chunks
 
 __all__ = [
     # OCR tasks
     "process_page_ocr",
     "process_document_ocr",
+    # Source image tasks
+    "transcribe_source_image",
+    "translate_source_image",
     # Chunking tasks
     "create_document_chunks",
     # Extraction tasks

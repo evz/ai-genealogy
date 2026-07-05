@@ -2,8 +2,8 @@
 """
 DeepSeek-OCR Processor
 
-End-to-end OCR processor using DeepSeek-OCR in gundam mode.
-Processes full pages without region detection for maximum accuracy.
+End-to-end OCR processor using DeepSeek-OCR (served via Ollama) for full-page
+grounded transcription with layout/bounding-box tokens.
 """
 
 import logging
@@ -11,45 +11,37 @@ import re
 
 import cv2
 import numpy as np
+from django.conf import settings
 from PIL import Image
 
-from genealogy.deepseek_ocr_client import DeepSeekOCRClient
+from genealogy.ollama_utils import OllamaClient
 
 logger = logging.getLogger(__name__)
+
+# Requests grounded (layout + bounding box) markdown output, as verified against
+# Ollama's deepseek-ocr model.
+GROUNDING_PROMPT = "<|grounding|>Convert the document to markdown."
 
 
 class DeepSeekOCRProcessor:
     """
-    OCR processor using DeepSeek-OCR in gundam mode for maximum accuracy.
+    OCR processor using DeepSeek-OCR (via Ollama) for full-page grounded transcription.
 
     Processes full pages end-to-end without region detection.
     """
 
-    def __init__(
-        self,
-        deepseek_host: str = "192.168.1.234",
-        deepseek_port: int = 5555,
-        mode: str = "gundam",
-    ) -> None:
+    def __init__(self, ollama_client: OllamaClient | None = None, model: str | None = None) -> None:
         """
         Initialize the DeepSeek OCR processor.
 
         Args:
-            deepseek_host: DeepSeek-OCR server hostname or IP
-            deepseek_port: DeepSeek-OCR server port
-            mode: Resolution mode ('tiny', 'small', 'base', 'large', 'gundam')
+            ollama_client: OllamaClient instance to use (defaults to a new one, settings-configured)
+            model: Ollama model name (defaults to settings.OLLAMA_OCR_MODEL)
         """
-        self.deepseek_host = deepseek_host
-        self.deepseek_port = deepseek_port
-        self.mode = mode
+        self.ollama_client = ollama_client or OllamaClient()
+        self.model = model or settings.OLLAMA_OCR_MODEL
 
-        # Create client connection
-        self.client = DeepSeekOCRClient(host=deepseek_host, port=deepseek_port)
-
-        logger.info(
-            f"DeepSeekOCRProcessor initialized - host: {deepseek_host}:{deepseek_port}, "
-            f"mode: {mode}"
-        )
+        logger.info(f"DeepSeekOCRProcessor initialized - model: {self.model}")
 
     def is_inverted_region(self, image: Image.Image, bbox: tuple) -> bool:
         """
@@ -130,9 +122,9 @@ class DeepSeekOCRProcessor:
             OCR text with <|inverted|>true<|/inverted|> annotations added
         """
         # Pattern to match grounding token blocks
-        # Format: <|ref|>type<|/ref|><|det|>[[x1, y1, x2, y2]]<|/det|>\nContent
+        # Format (Ollama deepseek-ocr): type[[x1, y1, x2, y2]]\nContent
         # Capture element type to skip images
-        pattern = r'(<\|ref\|>(.*?)<\|/ref\|><\|det\|>\[\[([^\]]+)\]\]<\|/det\|>)(\n)'
+        pattern = r'(([a-zA-Z_]+)\[\[([^\]]+)\]\])(\n)'
 
         # Count matches for debugging
         matches = list(re.finditer(pattern, ocr_text))
@@ -179,17 +171,13 @@ class DeepSeekOCRProcessor:
         Returns:
             Extracted text with grounding tokens, markdown formatting, and inversion annotations
         """
-        logger.info(f"Processing full page with DeepSeek-OCR (mode: {self.mode})...")
+        logger.info(f"Processing full page with DeepSeek-OCR (model: {self.model})...")
 
-        # Process full page with DeepSeek-OCR
-        result = self.client.process_image(
-            image,
-            mode=self.mode,
-            preserve_layout=True
-        )
-
-        # Get OCR text with grounding tokens
-        text = result['text'].strip()
+        # Process full page with DeepSeek-OCR via Ollama
+        text = self.ollama_client.generate_with_image(model=self.model, prompt=GROUNDING_PROMPT, image=image)
+        if not text:
+            raise RuntimeError("DeepSeek-OCR (Ollama) returned no text")
+        text = text.strip()
 
         # Annotate inverted regions
         text = self.annotate_inverted_regions(text, image)
@@ -199,13 +187,8 @@ class DeepSeekOCRProcessor:
         )
         return text
 
-    def close(self):
-        """Close connection to DeepSeek-OCR server"""
-        if self.client:
-            self.client.close()
-
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
+        pass

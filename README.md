@@ -14,7 +14,7 @@ The interesting problems are mostly around OCR (handling complex layouts with se
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ 1. OCR WITH GROUNDING TOKENS (DeepSeek-OCR)                             │
+│ 1. OCR WITH GROUNDING TOKENS (DeepSeek-OCR via Ollama)                  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ • Rotation correction (Tesseract OSD + Kornia projection profiles)      │
 │ • Layout detection (DocLayout-YOLO finds regions, types)                │
@@ -168,14 +168,27 @@ This reduces embedding storage by 66% and dramatically improves semantic search 
 
 **Intelligent Model Routing:** Three-tier model architecture automatically routes queries to the optimal LLM based on complexity and query type. Merge/identity queries use gene-reasoner (DeepSeek-R1) for explicit reasoning, complex multi-step queries use gene-chat-main (Qwen2.5), and simple lookups use gene-chat-fast (Llama3.1:8b). Frontend displays model selection in real-time and streams DeepSeek's reasoning tokens for transparency.
 
+## Archival Source Images
+
+Separately from the book-extraction pipeline above, photographs of original archival documents (birth/marriage/death records, etc.) can be attached directly to `Person` records via `SourceImage`, with provenance captured per image: `Archive` (foreign key), `toegangsnummer` (access number), `inventarisnummer` (inventory number), and `page_number`. An image can be linked to multiple people (e.g. a marriage record).
+
+Processing is triggered explicitly from the Django admin (not automatically on upload), and routes to one of two OCR paths depending on whether the uploader marks the document as handwritten:
+
+- **Handwritten** → [Loghi](https://github.com/evz/loghi) HTR, via its `webservice/orchestrator` HTTP API
+- **Printed/typed** → Ollama's `deepseek-ocr` model
+
+Both paths feed into a translation step using Ollama's `aya-expanse:32b` model (Dutch → English), with a prompt tuned for garbled/uncertain OCR-HTR output.
+
 ## Tech Stack
 
 - **Backend**: Django + PostgreSQL (pgvector + pg_trgm) + Celery + Redis
-- **OCR**: DeepSeek-OCR, DocLayout-YOLO, Tesseract OSD
+- **OCR**: DeepSeek-OCR (via Ollama), DocLayout-YOLO, Tesseract OSD
+- **HTR**: Loghi (handwritten archival source images)
 - **LLM**: Ollama with three-tier routing
   - gene-chat-fast: llama3.1:8b (interactive queries)
   - gene-chat-main: qwen2.5:14b (complex reasoning, agent mode)
   - gene-reasoner: deepseek-r1:14b (identity resolution, explicit reasoning)
+  - aya-expanse:32b (Dutch → English translation for archival source images)
   - Embeddings: multilingual-e5-large
 - **Image Processing**: Kornia/PyTorch (GPU)
 - **RAG Retrieval**: Hybrid search with Reciprocal Rank Fusion
@@ -185,9 +198,11 @@ This reduces embedding storage by 66% and dramatically improves semantic search 
 
 End-to-end pipeline working with hybrid RAG retrieval. Currently processing the Van Zanten family book.
 
-**Data:** 390 people, 513 text chunks (all with embeddings), 268 tests passing
+**Data:** 390 people, 513 text chunks (all with embeddings), 269 tests passing (46 pre-existing failures in model-routing/agent tests, unrelated to recent work)
 
 Recent work:
+- Archival source image capture: attach photographed source documents to Person records with archive/toegangsnummer/inventarisnummer/page_number provenance, transcribed via Loghi HTR (handwritten) or Ollama deepseek-ocr (printed), translated via aya-expanse:32b
+- Migrated book-page OCR off a bespoke ZeroMQ DeepSeek-OCR server onto Ollama's deepseek-ocr model, now that it's available directly through Ollama
 - Semantic query expansion (LLM-based Dutch/English synonym generation for archaic terminology)
 - Intelligent model routing (3-tier LLM architecture with automatic selection)
 - Streaming reasoning tokens from DeepSeek-R1 to frontend

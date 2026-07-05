@@ -291,6 +291,62 @@ class Archive(models.Model):
         return f"{self.abbreviation} — {self.name}"
 
 
+class SourceImage(models.Model):
+    """A photographed/scanned archival source document, attached to the people it depicts."""
+
+    TRANSCRIPTION_METHODS = [
+        ("loghi", "Loghi HTR (handwritten)"),
+        ("ollama_deepseek_ocr", "Ollama DeepSeek-OCR (printed)"),
+    ]
+    PROCESSING_STATUS = [
+        ("pending", "Pending"),
+        ("processing", "Processing"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    persons = models.ManyToManyField("Person", related_name="source_images")
+    archive = models.ForeignKey(Archive, on_delete=models.PROTECT, related_name="source_images")
+
+    # Provenance
+    toegangsnummer = models.CharField(max_length=100, help_text="Access number")
+    inventarisnummer = models.CharField(max_length=100, help_text="Inventory number")
+    page_number = models.PositiveIntegerField()
+
+    image_file = models.ImageField(upload_to="source_images/%Y/%m/")
+    is_handwritten = models.BooleanField(
+        help_text="Set by the uploading user; determines which pipeline processes this image"
+    )
+
+    # Transcription
+    transcription_method = models.CharField(max_length=30, choices=TRANSCRIPTION_METHODS, blank=True)
+    transcription_status = models.CharField(max_length=20, choices=PROCESSING_STATUS, default="pending")
+    raw_transcription = models.TextField(blank=True)
+    transcription_error = models.TextField(blank=True)
+    transcribed_at = models.DateTimeField(null=True, blank=True)
+
+    # Translation
+    translation_status = models.CharField(max_length=20, choices=PROCESSING_STATUS, default="pending")
+    translation = models.TextField(blank=True)
+    translation_model = models.CharField(max_length=100, blank=True)
+    translation_error = models.TextField(blank=True)
+    translated_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["archive", "toegangsnummer", "inventarisnummer", "page_number"]
+        indexes = [
+            models.Index(fields=["archive", "toegangsnummer", "inventarisnummer"]),
+        ]
+
+    def __str__(self):
+        return f"{self.archive.abbreviation} {self.toegangsnummer}/{self.inventarisnummer} p.{self.page_number}"
+
+
 class Place(models.Model):
     """Geographic location"""
 

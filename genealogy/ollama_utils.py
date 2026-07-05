@@ -1,9 +1,12 @@
 """Ollama API utilities for model management and querying"""
 
+import base64
+import io
 import logging
 import os
 
 import requests
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +135,35 @@ class OllamaClient:
         except requests.RequestException as e:
             logger.exception(f"Error generating text: {e}")
             return None
+
+    def generate_with_image(
+        self,
+        model: str,
+        prompt: str,
+        image: "str | Image.Image",
+        system: str = None,
+        **kwargs,
+    ) -> str | None:
+        """
+        Generate text using a vision model, given an image.
+
+        Args:
+            model: Vision model name to use (e.g. a deepseek-ocr model)
+            prompt: Instruction prompt for the model
+            image: Either a path to an image file, or an in-memory PIL Image
+            system: Optional system prompt to set behavior
+            **kwargs: Additional ollama parameters (temperature, num_ctx, etc.)
+        """
+        if isinstance(image, Image.Image):
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            image_bytes = buffer.getvalue()
+        else:
+            with open(image, "rb") as f:
+                image_bytes = f.read()
+
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        return self.generate(model=model, prompt=prompt, system=system, images=[image_b64], **kwargs)
 
     def generate_stream(self, model: str, prompt: str, system: str = None, **kwargs):
         """

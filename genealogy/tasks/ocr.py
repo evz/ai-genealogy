@@ -3,7 +3,6 @@ import logging
 import os
 
 from celery import shared_task
-from django.conf import settings
 from django.core.exceptions import ValidationError
 from pdf2image import convert_from_path
 from PIL import Image
@@ -43,11 +42,7 @@ def process_page_ocr(self, page_id: str):  # noqa: ARG001
 
         # Initialize OCR components
         rotation_detector = RotationDetector()
-        ocr_processor = DeepSeekOCRProcessor(
-            deepseek_host=settings.DEEPSEEK_OCR_HOST,
-            deepseek_port=settings.DEEPSEEK_OCR_PORT,
-            mode="gundam"
-        )
+        ocr_processor = DeepSeekOCRProcessor()
 
         # Process the image file
         file_path = page.image_file.path

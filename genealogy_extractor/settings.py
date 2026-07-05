@@ -170,9 +170,15 @@ WIKI_ADMIN_PASS = os.getenv("WIKI_ADMIN_PASS", "")
 # NER Model Configuration
 NER_MODEL_PATH = os.getenv("NER_MODEL_PATH", "models/genealogy_ner_20250920_150219")
 
-# DeepSeek-OCR configuration
-DEEPSEEK_OCR_HOST = os.getenv("DEEPSEEK_OCR_HOST", "localhost")
-DEEPSEEK_OCR_PORT = int(os.getenv("DEEPSEEK_OCR_PORT", "5555"))
+# Loghi HTR orchestrator (handwritten archival documents)
+LOGHI_HOST = os.getenv("LOGHI_HOST", "localhost")
+LOGHI_PORT = int(os.getenv("LOGHI_PORT", "8090"))
+
+# Ollama vision OCR model (printed/typed archival documents)
+OLLAMA_OCR_MODEL = os.getenv("OLLAMA_OCR_MODEL", "deepseek-ocr")
+
+# Translation model for archival source images
+OLLAMA_TRANSLATION_MODEL = os.getenv("OLLAMA_TRANSLATION_MODEL", "aya-expanse:32b")
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

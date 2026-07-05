@@ -11,6 +11,7 @@ from .place import PlaceAdmin
 from .prompt_log import PromptLogAdmin
 from .prompt_template import PromptTemplateAdmin
 from .relationship_admin import RelationshipAdmin
+from .source_image import SourceImageAdmin
 from .textchunk import TextChunkAdmin
 
 __all__ = [
@@ -27,5 +28,6 @@ __all__ = [
     'PromptLogAdmin',
     'PromptTemplateAdmin',
     'RelationshipAdmin',
+    'SourceImageAdmin',
     'TextChunkAdmin',
 ]

@@ -7,10 +7,17 @@ from .models import BoundingBox, ChunkType, GroundingToken
 
 # Regex patterns for token parsing and classification
 
-# Grounding token pattern - captures DeepSeek-OCR grounding tokens
-# Format: <|ref|>type<|/ref|><|det|>[[coords]]<|/det|><|inverted|>true<|/inverted|>\ncontent
+# Grounding token pattern - captures DeepSeek-OCR grounding tokens.
+# Supports two formats, since a document's combined OCR text can mix pages
+# processed by either backend:
+#   Old (ZeroMQ DeepSeek-OCR server): <|ref|>type<|/ref|><|det|>[[coords]]<|/det|><|inverted|>true<|/inverted|>\ncontent
+#   New (Ollama deepseek-ocr):        type[[coords]]<|inverted|>true<|/inverted|>\ncontent
 GROUNDING_TOKEN_PATTERN = re.compile(
-    r'<\|ref\|>([^<]+)<\|/ref\|><\|det\|>\[\[([0-9,\s]+)\]\]<\|/det\|>(<\|inverted\|>true<\|/inverted\|>)?\s*\n(.*?)(?=\n*<\|ref\||$)',
+    r'(?:<\|ref\|>(?P<type_old>[^<]+)<\|/ref\|><\|det\|>\[\[(?P<bbox_old>[0-9,\s]+)\]\]<\|/det\|>'
+    r'|(?P<type_new>[a-zA-Z_]+)\[\[(?P<bbox_new>[0-9,\s]+)\]\])'
+    r'(?P<inverted><\|inverted\|>true<\|/inverted\|>)?\s*\n'
+    r'(?P<content>.*?)'
+    r'(?=\n*(?:<\|ref\||[a-zA-Z_]+\[\[)|$)',
     re.DOTALL
 )
 
@@ -60,10 +67,10 @@ def parse_grounding_tokens(ocr_text: str) -> List[GroundingToken]:
     tokens = []
 
     for match in GROUNDING_TOKEN_PATTERN.finditer(ocr_text):
-        element_type = match.group(1)
-        bbox_str = match.group(2)
-        inverted_tag = match.group(3)  # <|inverted|>true<|/inverted|> or None
-        content = match.group(4).strip()
+        element_type = match.group('type_old') or match.group('type_new')
+        bbox_str = match.group('bbox_old') or match.group('bbox_new')
+        inverted_tag = match.group('inverted')  # <|inverted|>true<|/inverted|> or None
+        content = match.group('content').strip()
 
         # Parse bounding box
         try:
